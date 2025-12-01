@@ -5,6 +5,8 @@ import { CleanCard } from '../components/CustomComponents';
 import { media } from '@kit.MediaKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
+import { PreferenceManager } from '../utils/PreferenceManager';
+import { vibrator } from '@kit.SensorServiceKit'; // [新增] 振动模块
 
 @Component
 export struct ReviewPage {
@@ -19,10 +21,21 @@ export struct ReviewPage {
 
   private avPlayer: media.AVPlayer | null = null;
 
+  // [新增] 本地状态缓存
+  private accentType: number = 2; // 默认美音
+  private isHapticOn: boolean = true;
+
   async aboutToAppear(): Promise<void> {
-    this.words = await DatabaseManager.getInstance().getTodayReviewWords(50);
-    this.isLoading = false;
     await this.initAudioPlayer();
+
+    // 加载用户偏好
+    const prefs = PreferenceManager.getInstance();
+    const limit = await prefs.getDailyLimit();
+    this.accentType = await prefs.getAccentType();
+    this.isHapticOn = await prefs.isHapticEnabled();
+
+    this.words = await DatabaseManager.getInstance().getTodayReviewWords(limit);
+    this.isLoading = false;
 
     if (this.words.length === 0) {
       this.isFinished = true;
@@ -49,7 +62,10 @@ export struct ReviewPage {
     if (!this.avPlayer) return;
     try {
       await this.avPlayer.reset();
-      this.avPlayer.url = `https://dict.youdao.com/dictvoice?audio=${text}&type=2`;
+      // [修改] 根据 accentType (1=UK, 2=US) 动态调整 URL
+      // 有道 API: type=1(英), type=2(美)
+      this.avPlayer.url = `https://dict.youdao.com/dictvoice?audio=${text}&type=${this.accentType}`;
+
       this.avPlayer.on('stateChange', async (state: string) => {
         if (state === 'initialized') {
           await this.avPlayer?.prepare();
@@ -62,22 +78,34 @@ export struct ReviewPage {
     }
   }
 
+  // [新增] 触发振动反馈
+  triggerHaptic(grade: ReviewGrade): void {
+    if (!this.isHapticOn) return;
+
+    try {
+      // 根据 grade 提供不同的振动时长
+      let duration = 30;
+      if (grade === ReviewGrade.AGAIN) duration = 100; // 忘记了，长震动提醒
+      else if (grade === ReviewGrade.EASY) duration = 20; // 简单，轻微震动
+
+      vibrator.startVibration({
+        type: 'time',
+        duration: duration,
+      }, {
+        id: 0,
+        usage: 'touch'
+      });
+    } catch (e) {
+      // 忽略不支持振动的设备报错
+    }
+  }
+
   async deleteCurrentWord(): Promise<void> {
     const word = this.words[this.currentIndex];
-    // [修复] 使用标准的类型检查，且调用公开的 deleteWord 方法
     if (word && word.id !== undefined) {
-      const db = DatabaseManager.getInstance();
-
-      // 调用我们在 DatabaseManager 中新加的公开方法
-      await db.deleteWord(word.id);
-
-      try {
-        promptAction.showToast({ message: '已删除并跳过' });
-      } catch (e) {}
-
-      // UI 移除
+      await DatabaseManager.getInstance().deleteWord(word.id);
+      try { promptAction.showToast({ message: 'Deleted' }); } catch (e) {}
       this.words.splice(this.currentIndex, 1);
-
       if (this.currentIndex >= this.words.length) {
         this.isFinished = true;
       } else {
@@ -92,6 +120,9 @@ export struct ReviewPage {
   }
 
   async submitReview(grade: ReviewGrade): Promise<void> {
+    // [新增] 触发振动
+    this.triggerHaptic(grade);
+
     const currentWord = this.words[this.currentIndex];
     const result = Sm2Algorithm.calculate(currentWord, grade);
 
@@ -102,6 +133,8 @@ export struct ReviewPage {
         result.repetition,
         result.easeFactor
       );
+      // 记录活跃
+      await DatabaseManager.getInstance().logActivity();
     }
 
     if (this.currentIndex < this.words.length - 1) {
@@ -129,70 +162,40 @@ export struct ReviewPage {
           }
           .width('100%').height('100%').justifyContent(FlexAlign.Center)
         } else if (this.words.length > 0) {
+          // Top Bar
           Row() {
-            Image($r('sys.media.ohos_ic_public_arrow_left'))
-              .width(24).height(24).fillColor('#333')
-              .onClick(() => { this.goBack() })
-
+            Image($r('sys.media.ohos_ic_public_arrow_left')).width(24).height(24).fillColor('#333').onClick(() => { this.goBack() })
             Blank()
             Text(`${this.currentIndex + 1} / ${this.words.length}`).fontColor('#999').fontSize(16).fontWeight(FontWeight.Medium)
             Blank()
-
-            // [修复] 替换为 remove 图标
-            Image($r('sys.media.ohos_ic_public_remove'))
-              .width(20).height(20).fillColor('#CCC')
+            Image($r('sys.media.ohos_ic_public_remove')).width(20).height(20).fillColor('#CCC')
               .onClick(() => {
-                promptAction.showDialog({
-                  title: 'Delete Word?',
-                  message: 'This will remove the word from your database permanently.',
-                  buttons: [
-                    { text: 'Cancel', color: '#666' },
-                    { text: 'Delete', color: '#FF4D4F' }
-                  ]
-                }).then(res => {
-                  if (res.index === 1) this.deleteCurrentWord();
-                })
+                promptAction.showDialog({ title: 'Delete Word?', message: 'Permanently remove?', buttons: [{ text: 'Cancel', color: '#666' }, { text: 'Delete', color: '#FF4D4F' }] }).then(res => { if (res.index === 1) this.deleteCurrentWord(); })
               })
           }
           .width('100%').padding({ left: 20, right: 20, bottom: 10 })
 
-          Progress({ value: this.currentIndex + 1, total: this.words.length, type: ProgressType.Linear })
-            .color('#0A59F7').width('100%').height(4)
+          Progress({ value: this.currentIndex + 1, total: this.words.length, type: ProgressType.Linear }).color('#0A59F7').width('100%').height(4)
 
           Column() {
             CleanCard() {
               Column() {
                 Row({ space: 8 }) {
-                  Text(this.words[this.currentIndex].spelling)
-                    .fontSize(36).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
-
-                  Button({ type: ButtonType.Circle }) {
-                    Image($r('sys.media.ohos_ic_public_sound'))
-                      .width(20).height(20).fillColor('#0A59F7')
-                  }
+                  Text(this.words[this.currentIndex].spelling).fontSize(36).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+                  Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }
                   .width(36).height(36).backgroundColor('rgba(10, 89, 247, 0.1)')
                   .onClick(() => { this.playWord(this.words[this.currentIndex].spelling) })
                 }
-                .margin({ top: 40 })
-                .alignItems(VerticalAlign.Center)
+                .margin({ top: 40 }).alignItems(VerticalAlign.Center)
 
-                if (this.words[this.currentIndex].phonetic) {
-                  Text(this.words[this.currentIndex].phonetic).fontSize(18).fontColor('#888').margin({ top: 10 })
-                }
+                if (this.words[this.currentIndex].phonetic) Text(this.words[this.currentIndex].phonetic).fontSize(18).fontColor('#888').margin({ top: 10 })
 
                 if (this.isAnswerShown) {
                   Divider().color('#EEE').width('40%').margin({ top: 40, bottom: 40 })
-                  Text(this.words[this.currentIndex].meaning)
-                    .fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
-                  if (this.words[this.currentIndex].example) {
-                    Text(this.words[this.currentIndex].example)
-                      .fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic)
-                      .textAlign(TextAlign.Center).margin({ top: 20 }).padding({ left: 20, right: 20 })
-                  }
+                  Text(this.words[this.currentIndex].meaning).fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
+                  if (this.words[this.currentIndex].example) Text(this.words[this.currentIndex].example).fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic).textAlign(TextAlign.Center).margin({ top: 20 }).padding({ left: 20, right: 20 })
                 } else {
-                  Column() {
-                    Text('Tap to Show Answer').fontSize(16).fontColor('#BBB')
-                  }
+                  Column() { Text('Tap to Show Answer').fontSize(16).fontColor('#BBB') }
                   .height(200).justifyContent(FlexAlign.Center).width('100%')
                   .onClick(() => {
                     this.getUIContext().animateTo({ duration: 300 }, () => {
@@ -216,8 +219,7 @@ export struct ReviewPage {
             }
             .padding({ bottom: 30, left: 16, right: 16 })
           } else {
-            Button('Show Answer')
-              .width('90%').height(56).backgroundColor('#0A59F7').fontSize(18)
+            Button('Show Answer').width('90%').height(56).backgroundColor('#0A59F7').fontSize(18)
               .onClick(() => {
                 this.getUIContext().animateTo({ duration: 300 }, () => {
                   this.isAnswerShown = true;
@@ -228,16 +230,12 @@ export struct ReviewPage {
           }
         }
       }
-      .width('100%').height('100%').backgroundColor('#F5F7FA')
-      .padding({ top: 48 })
+      .width('100%').height('100%').backgroundColor('#F5F7FA').padding({ top: 48 })
     }
     .hideTitleBar(true)
   }
 
   @Builder ReviewButton(label: string, color: string, action: () => void) {
-    Button(label)
-      .layoutWeight(1).height(50).backgroundColor(Color.White).fontColor(color)
-      .border({ width: 1, color: color }).fontSize(14).fontWeight(FontWeight.Medium)
-      .onClick(action)
+    Button(label).layoutWeight(1).height(50).backgroundColor(Color.White).fontColor(color).border({ width: 1, color: color }).fontSize(14).fontWeight(FontWeight.Medium).onClick(action)
   }
 }
