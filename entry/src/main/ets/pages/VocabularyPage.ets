@@ -57,9 +57,14 @@ export struct VocabularyPage {
       if ((this.word.roots && this.word.roots!.length > 0) || (this.word.affixes && this.word.affixes!.length > 0)) {
         Column({ space: 6 }) {
           Text('词根词缀卡').fontSize(12).fontColor('#0F172A').fontWeight(FontWeight.Medium)
-          Wrap() {
+          Flex({ wrap: FlexWrap.Wrap }) {
             ForEach([...(this.word.roots || []), ...(this.word.affixes || [])], (item: string, index?: number) => {
-              Text(item).padding({ left: 10, right: 10, top: 6, bottom: 6 }).backgroundColor('#EEF2FF').borderRadius(10).fontSize(12)
+              Text(item)
+                .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+                .margin({ right: 8, bottom: 8 })
+                .backgroundColor('#EEF2FF')
+                .borderRadius(10)
+                .fontSize(12)
             }, (item: string, index?: number) => `${item}-${index}`)
           }
         }
@@ -99,9 +104,14 @@ export struct VocabularyPage {
       if ((this.word.synonyms && this.word.synonyms!.length > 0) || (this.word.antonyms && this.word.antonyms!.length > 0)) {
         Column({ space: 6 }) {
           Text('同反义关联').fontSize(12).fontWeight(FontWeight.Medium)
-          Wrap() {
+          Flex({ wrap: FlexWrap.Wrap }) {
             ForEach([...(this.word.synonyms || []), ...(this.word.antonyms || [])], (item: string, index?: number) => {
-              Text(item).padding({ left: 10, right: 10, top: 6, bottom: 6 }).backgroundColor('#FEF3C7').borderRadius(10).fontSize(12)
+              Text(item)
+                .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+                .margin({ right: 8, bottom: 8 })
+                .backgroundColor('#FEF3C7')
+                .borderRadius(10)
+                .fontSize(12)
             }, (item: string, index?: number) => `${item}-${index}`)
           }
         }
