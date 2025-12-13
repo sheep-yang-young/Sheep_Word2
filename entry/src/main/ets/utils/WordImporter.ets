@@ -52,9 +52,9 @@ export class WordImporter {
 
       // 尝试作为 JSON 解析
       try {
-        // [关键修复] 显式断言 JSON.parse 的返回类型
-        const rawData = JSON.parse(content) as RawImportItem[];
-        if (Array.isArray(rawData)) {
+        const parsed: unknown = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+          const rawData: RawImportItem[] = parsed.filter((item): item is RawImportItem => typeof item === 'object' && item !== null);
           return await WordImporter.processJsonData(rawData, bookId);
         }
       } catch (error) {
@@ -127,8 +127,12 @@ export class WordImporter {
   private static async parseAndSaveJson(uri: string, bookId: string): Promise<number> {
     try {
       const content = await WordImporter.readFileContent(uri);
-      // [关键修复] 显式断言类型
-      const rawData = JSON.parse(content) as RawImportItem[];
+      const parsed: unknown = JSON.parse(content);
+      if (!Array.isArray(parsed)) {
+        return -1;
+      }
+
+      const rawData: RawImportItem[] = parsed.filter((item): item is RawImportItem => typeof item === 'object' && item !== null);
       return await WordImporter.processJsonData(rawData, bookId);
     } catch (error) {
       return -1;
