@@ -8,6 +8,12 @@ import { SettingsPage } from './SettingsPage';
 import { ZenPage } from './ZenPage';
 import { WelcomePage } from './WelcomePage';
 import { AboutPage } from './AboutPage';
+import { PracticeHubPage } from './PracticeHubPage';
+import { SpellChallengePage } from './SpellChallengePage';
+import { DictationPage } from './DictationPage';
+import { FlashTFPage } from './FlashTFPage';
+import { MatchPairsPage } from './MatchPairsPage';
+import { TimeAttackPage } from './TimeAttackPage';
 import { SimpleLineChart, CleanCard } from '../components/CustomComponents';
 import { PreferenceManager } from '../utils/PreferenceManager';
 import { promptAction } from '@kit.ArkUI';
@@ -64,6 +70,12 @@ struct Index {
     else if (name === 'SettingsPage') { SettingsPage() }
     else if (name === 'ZenPage') { ZenPage() }
     else if (name === 'AboutPage') { AboutPage() }
+    else if (name === 'PracticeHubPage') { PracticeHubPage() }
+    else if (name === 'SpellChallengePage') { SpellChallengePage() }
+    else if (name === 'DictationPage') { DictationPage() }
+    else if (name === 'FlashTFPage') { FlashTFPage() }
+    else if (name === 'MatchPairsPage') { MatchPairsPage() }
+    else if (name === 'TimeAttackPage') { TimeAttackPage() }
   }
 
   build() {
@@ -330,6 +342,8 @@ struct HomePage {
 
               this.PlanCard()
 
+              this.PracticeCard()
+
               this.OverviewCard()
 
               if (this.focusWords.length > 0) {
@@ -493,6 +507,32 @@ struct HomePage {
             Blank().layoutWeight(1)
             Text(`待复习 ${this.stats.due}`).fontSize(12).fontColor('#666')
           }
+        }
+      }
+    }
+  }
+
+  @Builder PracticeCard() {
+    CleanCard() {
+      Column({ space: 12 }) {
+        Row() {
+          Column() {
+            Text('练习中心').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+            Text('拼写、听写、闪卡、配对、冲刺全方位巩固').fontSize(12).fontColor('#666').maxLines(2)
+          }
+          .layoutWeight(1)
+
+          Button('进入')
+            .backgroundColor('#E6F4FF')
+            .fontColor('#0A59F7')
+            .borderRadius(18)
+            .onClick(() => { this.pageStack.pushPath({ name: 'PracticeHubPage' }) })
+        }
+
+        Row({ space: 8 }) {
+          this.StepPill('拼写挑战', '错误高亮', '#E6F4FF', '#1677FF')
+          this.StepPill('听写练习', '倒计时重播', '#FFF7E6', '#FAAD14')
+          this.StepPill('60 秒冲刺', '限时积分', '#E6F7FF', '#1890FF')
         }
       }
     }
