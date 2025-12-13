@@ -17,6 +17,13 @@ interface RawImportItem {
   definition?: string;
   example?: string;
   note?: string;
+  roots?: string[] | string;
+  affixes?: string[] | string;
+  collocations?: string[] | string;
+  synonyms?: string[] | string;
+  antonyms?: string[] | string;
+  derivatives?: string[] | string;
+  senses?: string[] | string;
 }
 
 export class WordImporter {
@@ -141,6 +148,14 @@ export class WordImporter {
           meaning: item.meaning || item.trans || item.definition || '暂无释义',
           example: item.example || '',
           note: item.note || '',
+          roots: WordImporter.toArray(item.roots),
+          affixes: WordImporter.toArray(item.affixes),
+          collocations: WordImporter.toArray(item.collocations),
+          synonyms: WordImporter.toArray(item.synonyms),
+          antonyms: WordImporter.toArray(item.antonyms),
+          derivatives: WordImporter.toArray(item.derivatives),
+          senses: WordImporter.toArray(item.senses),
+          knowledgeScore: 0,
           proficiency: 0,
           repetition: 0,
           interval: 0,
@@ -200,6 +215,14 @@ export class WordImporter {
             meaning: meaning,
             example: '',
             note: '',
+            roots: [],
+            affixes: [],
+            collocations: [],
+            synonyms: [],
+            antonyms: [],
+            derivatives: [],
+            senses: [],
+            knowledgeScore: 0,
             proficiency: 0,
             repetition: 0,
             interval: 0,
@@ -217,5 +240,11 @@ export class WordImporter {
     } catch (error) {
       return -1;
     }
+  }
+
+  private static toArray(value?: string[] | string): string[] {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter((v) => v.length > 0);
+    return value.split(/[;,，；\n]/).map((v) => v.trim()).filter((v) => v.length > 0);
   }
 }

@@ -26,6 +26,12 @@ export struct ReviewPage {
   @State isSpellingCorrect: boolean | null = null;
   @State hintText: string = '';
 
+  @State scenarioOptions: string[] = [];
+  @State scenarioQuestion: string = '';
+  @State scenarioCorrectOption: string = '';
+  @State scenarioFeedback: string = '';
+  @State scenarioAnswered: boolean = false;
+
   // [动效] 卡片旋转角度
   @State cardAngle: number = 0;
 
@@ -75,6 +81,7 @@ export struct ReviewPage {
       this.userInput = '';
       this.isSpellingCorrect = null;
       this.generateHint(word.spelling);
+      this.prepareScenario(word);
 
       if (this.reviewMode === 0) this.playWord(word.spelling);
     }
@@ -91,6 +98,44 @@ export struct ReviewPage {
     let hint = '';
     for (let i = 0; i < len; i++) { if (indices.has(i)) hint += cleanWord[i] + ' '; else hint += '_ '; }
     this.hintText = hint.trim();
+  }
+
+  prepareScenario(word: Word): void {
+    this.scenarioOptions = [];
+    this.scenarioQuestion = '';
+    this.scenarioCorrectOption = '';
+    this.scenarioFeedback = '';
+    this.scenarioAnswered = false;
+
+    if (word.senses && word.senses.length > 1) {
+      const uniqueSenses = Array.from(new Set(word.senses.filter((item) => !!item)));
+      if (uniqueSenses.length > 1) {
+        const context = (word.collocations && word.collocations.length > 0) ? word.collocations[0] : (word.example || '选择最贴合的场景含义');
+        this.scenarioQuestion = `在“${context}”的语境下，${word.spelling} 更接近哪一种含义？`;
+        this.scenarioCorrectOption = uniqueSenses[0];
+        this.scenarioOptions = this.shuffleArray(uniqueSenses);
+      }
+    }
+  }
+
+  shuffleArray(list: string[]): string[] {
+    const arr = [...list];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  async selectScenarioOption(option: string): Promise<void> {
+    if (!this.scenarioOptions.length || this.scenarioAnswered) return;
+    this.scenarioAnswered = true;
+    const isCorrect = option === this.scenarioCorrectOption;
+    this.scenarioFeedback = isCorrect ? '命中正确场景！' : `正确答案：${this.scenarioCorrectOption}`;
+    const currentWord = this.words[this.currentIndex];
+    if (currentWord && currentWord.id !== undefined) {
+      await DatabaseManager.getInstance().recordKnowledgePractice(currentWord.id, isCorrect);
+    }
   }
 
   aboutToDisappear(): void { if (this.avPlayer) this.avPlayer.release(); this.refreshFlag++; }
@@ -175,18 +220,28 @@ export struct ReviewPage {
                       Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(36).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(36).height(36).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 40 }).alignItems(VerticalAlign.Center)
                     }
                     if (this.words[this.currentIndex].phonetic) Text(this.words[this.currentIndex].phonetic).fontSize(18).fontColor('#888').margin({ top: 10 })
+                    if (this.reviewMode === 0 && this.scenarioOptions.length > 0) {
+                      Column({ space: 8 }) {
+                        Text('多义场景选择题').fontSize(14).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
+                        Text(this.scenarioQuestion).fontSize(14).fontColor('#555').textAlign(TextAlign.Center).margin({ bottom: 4 })
+                        ForEach(this.scenarioOptions, (option: string, index?: number) => {
+                          Button(option).width('100%').height(40).backgroundColor('#F5F7FA').fontColor('#1A1A1A').border({ width: 1, color: '#E5E7EB' }).onClick(() => { this.selectScenarioOption(option) }).enabled(!this.scenarioAnswered)
+                        }, (option: string, index?: number) => `${option}-${index}`)
+                        if (this.scenarioFeedback) Text(this.scenarioFeedback).fontSize(12).fontColor(this.scenarioFeedback.includes('正确答案') ? '#FF4D4F' : '#10B981')
+                      }.width('100%').padding({ left: 8, right: 8, top: 10 }).backgroundColor('#F8FAFF').borderRadius(12).margin({ top: 16 })
+                    }
                     if (this.reviewMode === 0) Column() { Text('Tap to Show Answer').fontSize(16).fontColor('#BBB') }.height(200).justifyContent(FlexAlign.Center).width('100%').onClick(() => { this.showAnswerWithFlip(); this.playWord(this.words[this.currentIndex].spelling); })
                   }.width('100%').height('65%')
                 }
                 // --- 背面 ---
-                else {
-                  Column() {
-                    Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(32).height(32).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 20 })
-                    Divider().color('#EEE').width('40%').margin({ top: 20, bottom: 20 })
-                    Scroll() { Column({ space: 10 }) { Text(this.words[this.currentIndex].meaning).fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center); if (this.words[this.currentIndex].example) Text(this.words[this.currentIndex].example).fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic).textAlign(TextAlign.Center).margin({ top: 10 }); if (this.currentNote) Column() { Text('NOTE').fontSize(10).fontColor('#0A59F7').fontWeight(FontWeight.Bold); Text(this.currentNote).fontSize(14).fontColor('#666').margin({ top: 4 }) }.width('100%').padding(12).backgroundColor('#F0F9FF').borderRadius(8).alignItems(HorizontalAlign.Start).margin({ top: 20 }).onClick(() => { this.noteController.open() }) }.padding({ left: 20, right: 20 }) }.layoutWeight(1).scrollBar(BarState.Auto)
-                  }
-                  .width('100%').height('65%')
-                  // [核心修复] 正确的旋转参数：绕Y轴旋转180度
+                    else {
+                      Column() {
+                        Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(32).height(32).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 20 })
+                        Divider().color('#EEE').width('40%').margin({ top: 20, bottom: 20 })
+                        Scroll() { Column({ space: 10 }) { Text(this.words[this.currentIndex].meaning).fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center); if (this.words[this.currentIndex].example) Text(this.words[this.currentIndex].example).fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic).textAlign(TextAlign.Center).margin({ top: 10 }); if ((this.words[this.currentIndex].roots && this.words[this.currentIndex].roots!.length > 0) || (this.words[this.currentIndex].affixes && this.words[this.currentIndex].affixes!.length > 0)) this.KnowledgeChips('词根词缀卡', [...(this.words[this.currentIndex].roots || []), ...(this.words[this.currentIndex].affixes || [])], '#EEF2FF'); if (this.words[this.currentIndex].collocations && this.words[this.currentIndex].collocations!.length > 0) this.CollocationPractice(this.words[this.currentIndex].collocations!); if (this.words[this.currentIndex].derivatives && this.words[this.currentIndex].derivatives!.length > 0) this.KnowledgeChips('词族树', this.words[this.currentIndex].derivatives, '#F0FDF4'); if (this.words[this.currentIndex].synonyms && this.words[this.currentIndex].synonyms!.length > 0) this.KnowledgeChips('同义/反义', [...(this.words[this.currentIndex].synonyms || []), ...(this.words[this.currentIndex].antonyms || [])], '#F8FAFC'); if (this.words[this.currentIndex].senses && this.words[this.currentIndex].senses!.length > 0) this.KnowledgeChips('多义解读', this.words[this.currentIndex].senses, '#FFF7ED'); if (this.currentNote) Column() { Text('NOTE').fontSize(10).fontColor('#0A59F7').fontWeight(FontWeight.Bold); Text(this.currentNote).fontSize(14).fontColor('#666').margin({ top: 4 }) }.width('100%').padding(12).backgroundColor('#F0F9FF').borderRadius(8).alignItems(HorizontalAlign.Start).margin({ top: 20 }).onClick(() => { this.noteController.open() }) }.padding({ left: 20, right: 20 }) }.layoutWeight(1).scrollBar(BarState.Auto)
+                      }
+                      .width('100%').height('65%')
+                      // [核心修复] 正确的旋转参数：绕Y轴旋转180度
                   .rotate({ x: 0, y: 1, z: 0, angle: 180 })
                 }
               }
@@ -200,6 +255,47 @@ export struct ReviewPage {
         }
       }.width('100%').height('100%').backgroundColor('#F5F7FA').padding({ top: 48 })
     }.hideTitleBar(true)
+  }
+  async recordKnowledge(correct: boolean = true): Promise<void> {
+    const word = this.words[this.currentIndex];
+    if (word && word.id !== undefined) {
+      await DatabaseManager.getInstance().recordKnowledgePractice(word.id, correct);
+      try { promptAction.showToast({ message: correct ? '已记录知识练习' : '已记录纠错' }); } catch (e) {}
+    }
+  }
+  @Builder KnowledgeChips(title: string, items?: string[], bgColor: string = '#F5F7FA') {
+    if (!items || items.length === 0) return;
+    Column({ space: 8 }) {
+      Text(title).fontSize(12).fontColor('#0F172A').fontWeight(FontWeight.Medium)
+      Wrap() {
+        ForEach(items, (item: string, index?: number) => {
+          Text(item).padding({ left: 10, right: 10, top: 6, bottom: 6 }).backgroundColor(bgColor).borderRadius(10).fontColor('#111827').fontSize(12)
+        }, (item: string, index?: number) => `${item}-${index}`)
+      }.width('100%')
+    }
+    .padding(12)
+    .backgroundColor(Color.White)
+    .borderRadius(12)
+    .border({ width: 1, color: '#EEF2F7' })
+  }
+  @Builder CollocationPractice(list: string[]) {
+    Column({ space: 8 }) {
+      Row({ space: 6 }) {
+        Text('搭配练习').fontSize(12).fontColor('#0F172A').fontWeight(FontWeight.Medium)
+        Button('已熟悉').type(ButtonType.Normal).height(28).padding({ left: 10, right: 10 }).fontSize(12).backgroundColor('#E0F2FE').fontColor('#0369A1').onClick(() => { this.recordKnowledge(true); })
+      }
+      ForEach(list, (item: string, index?: number) => {
+        Row() {
+          Text(item).fontSize(14).fontColor('#111827').layoutWeight(1)
+          Button('不熟').type(ButtonType.Capsule).height(28).padding({ left: 10, right: 10 }).fontSize(12).backgroundColor('#FFF1F2').fontColor('#DC2626').onClick(() => { this.recordKnowledge(false); })
+        }
+        .padding({ top: 4, bottom: 4 })
+      }, (item: string, index?: number) => `${item}-${index}`)
+    }
+    .padding(12)
+    .backgroundColor('#F8FAFC')
+    .borderRadius(12)
+    .border({ width: 1, color: '#E5E7EB' })
   }
   @Builder ReviewButton(l: string, c: string, a: () => void) { Button(l).layoutWeight(1).height(50).backgroundColor(Color.White).fontColor(c).border({ width: 1, color: c }).fontSize(14).fontWeight(FontWeight.Medium).onClick(a) }
 }
