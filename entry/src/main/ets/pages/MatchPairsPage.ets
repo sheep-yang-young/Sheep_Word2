@@ -97,11 +97,12 @@ export struct MatchPairsPage {
               Text('点击匹配单词与释义').fontSize(14).fontColor('#666')
               Text(this.feedback).fontSize(14).fontColor(this.feedback.includes('成功') ? '#52C41A' : '#FA8C16')
 
-              Flex({ wrap: FlexWrap.Wrap, spacing: 10 }) {
+              Flex({ wrap: FlexWrap.Wrap }) {
                 ForEach(this.cards, (card: PairCard, index: number) => {
                   const isActive = this.selectedIndex === index;
                   Text(card.text)
                     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+                    .margin({ right: 10, bottom: 10 })
                     .backgroundColor(card.matched ? '#F6FFED' : isActive ? '#E6F7FF' : '#F0F2F5')
                     .fontColor(card.type === 'word' ? '#0A59F7' : '#722ED1')
                     .borderRadius(12)
