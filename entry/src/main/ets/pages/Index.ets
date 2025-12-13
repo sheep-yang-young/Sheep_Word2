@@ -3,6 +3,8 @@ import { WordImporter } from '../utils/WordImporter';
 import { DashboardStats } from '../model/WordModel';
 import { common } from '@kit.AbilityKit';
 import { ReviewPage } from './ReviewPage';
+import { ListenPracticePage } from './ListenPracticePage';
+import { SentencePracticePage } from './SentencePracticePage';
 import { VocabularyPage } from './VocabularyPage';
 import { SettingsPage } from './SettingsPage';
 import { ZenPage } from './ZenPage';
@@ -10,7 +12,8 @@ import { WelcomePage } from './WelcomePage';
 import { AboutPage } from './AboutPage';
 import { SimpleLineChart, CleanCard } from '../components/CustomComponents';
 import { PreferenceManager } from '../utils/PreferenceManager';
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, CustomDialogController } from '@kit.ArkUI';
+import { ReminderManager } from '../utils/ReminderManager';
 
 @Entry
 @Component
@@ -60,6 +63,8 @@ struct Index {
   @Builder
   PagesMap(name: string) {
     if (name === 'ReviewPage') { ReviewPage() }
+    else if (name === 'ListenPracticePage') { ListenPracticePage() }
+    else if (name === 'SentencePracticePage') { SentencePracticePage() }
     else if (name === 'VocabularyPage') { VocabularyPage() }
     else if (name === 'SettingsPage') { SettingsPage() }
     else if (name === 'ZenPage') { ZenPage() }
@@ -107,16 +112,30 @@ struct HomePage {
   @State chartData: number[] = [0, 0, 0, 0, 0];
   @State heatmapData: Map<string, number> = new Map();
   @State dateList: string[] = [];
+  @State availableBooks: string[] = [];
 
   // 默认显示占位符，数据加载后会更新
   @State selectedBook: string = "请选择词书";
   @State reviewMode: number = 0;
   @State dailyLimit: number = 20;
   @State todayRemaining: number = 20;
+  @State reminderEnabled: boolean = false;
+  @State reminderTime: string = '08:00';
+  @State reminderSummary: string = '';
+
+  @State customBookName: string = '';
+  @State remoteUrl: string = '';
+
+  importDialog: CustomDialogController = new CustomDialogController({ builder: () => this.ImportDialog(), autoCancel: true, customStyle: true });
+  remoteDialog: CustomDialogController = new CustomDialogController({ builder: () => this.RemoteDialog(), autoCancel: true, customStyle: true });
+  timeDialog: CustomDialogController = new CustomDialogController({ builder: () => this.TimeDialog(), autoCancel: true, customStyle: true });
 
   async aboutToAppear(): Promise<void> {
     this.reviewMode = await PreferenceManager.getInstance().getReviewMode();
     this.selectedBook = await PreferenceManager.getInstance().getCurrentBook();
+    this.reminderEnabled = await PreferenceManager.getInstance().getReminderEnabled();
+    this.reminderTime = await PreferenceManager.getInstance().getReminderTime();
+    await this.loadBooks();
 
     // 如果读出来是 Default Library 但实际上可能是还没初始化的状态
     // 这里做一个防御性显示
@@ -140,6 +159,7 @@ struct HomePage {
     // [逻辑优化] 每次刷新前，重新确认一下当前书名
     // 防止如果是首次启动，aboutToAppear 时还没拿到正确的书名
     this.selectedBook = await PreferenceManager.getInstance().getCurrentBook();
+    this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
 
     // 如果还是默认值且没数据，尝试找一本有数据的
     if (this.selectedBook === "Default Library" || this.selectedBook === "请选择词书") {
@@ -156,8 +176,15 @@ struct HomePage {
     this.todayRemaining = Math.max(0, this.dailyLimit - this.stats.learnedToday);
     this.chartData = await db.getProficiencyDistribution(this.selectedBook);
     this.heatmapData = await db.getActivityStats();
-    this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
     this.generateDateList();
+
+    this.reminderSummary = `今日待复习 ${this.stats.due} 个，剩余新词 ${this.todayRemaining} 个`;
+    if (this.reminderEnabled) {
+      await this.updateReminderSchedule();
+      if (this.todayRemaining === 0) {
+        await ReminderManager.getInstance().publishNotification('今日目标已完成', '完成目标，来巩固一下吧！');
+      }
+    }
   }
 
   async toggleMode(mode: number): Promise<void> {
@@ -165,51 +192,181 @@ struct HomePage {
     await PreferenceManager.getInstance().setReviewMode(mode);
   }
 
+  async loadBooks(): Promise<void> {
+    const db = DatabaseManager.getInstance();
+    const books = await db.getAllBooks();
+    const custom = await PreferenceManager.getInstance().getCustomBooks();
+    const merged = Array.from(new Set([...books, ...custom, 'CET-4', 'CET-6', 'GRE8000', 'TOEFL']));
+    this.availableBooks = merged;
+  }
+
+  async switchToBook(bookName: string): Promise<void> {
+    this.selectedBook = bookName;
+    await PreferenceManager.getInstance().setCurrentBook(bookName);
+    await this.refreshStats();
+    promptAction.showToast({ message: `已切换至 ${bookName}` });
+  }
+
   async handleSwitchBook(): Promise<void> {
-    promptAction.showActionMenu({
-      title: '切换词书',
-      buttons: [
-        { text: '英语四级 (CET4)', color: '#333' },
-        { text: '英语六级 (CET6)', color: '#333' },
-        { text: 'GRE 8000词', color: '#333' },
-        { text: '托福 (TOEFL)', color: '#333' }
-      ]
-    }).then(async (res) => {
-      let fileName = '';
-      let bookName = '';
-      switch (res.index) {
-        case 0: fileName = 'CET4.json'; bookName = 'CET-4'; break;
-        case 1: fileName = 'CET6.json'; bookName = 'CET-6'; break;
-        case 2: fileName = 'GRE8000.json'; bookName = 'GRE8000'; break;
-        case 3: fileName = 'TOEFL.json'; bookName = 'TOEFL'; break;
-      }
+    const extra = ['本地文件导入', '在线词库'];
+    const buttons = [...this.availableBooks.map((name) => ({ text: name, color: '#333' })), ...extra.map((t) => ({ text: t, color: '#0A59F7' }))];
 
-      if (fileName) {
-        try {
-          const context = getContext(this) as common.UIAbilityContext;
-          const exists = await DatabaseManager.getInstance().checkBookExists(bookName);
-
-          if (exists) {
-            this.selectedBook = bookName;
-            await PreferenceManager.getInstance().setCurrentBook(bookName);
-            await this.refreshStats();
-            promptAction.showToast({ message: `已切换至 ${bookName}` });
-          } else {
-            promptAction.showToast({ message: '正在初始化词库...' });
-            const count = await WordImporter.importFromRawFile(context, fileName, bookName);
-
-            if (count > 0) {
-              this.selectedBook = bookName;
-              await PreferenceManager.getInstance().setCurrentBook(bookName);
-              await this.refreshStats();
-              promptAction.showToast({ message: `成功导入：${count} 词` });
-            } else {
-              promptAction.showToast({ message: `未找到文件: ${fileName}` });
-            }
-          }
-        } catch (e) {}
+    promptAction.showActionMenu({ title: '切换/导入词书', buttons }).then(async (res) => {
+      const index = res.index;
+      if (index < this.availableBooks.length) {
+        const bookName = this.availableBooks[index];
+        const presetFile = this.getPresetFile(bookName);
+        if (presetFile) {
+          await this.ensureBuiltInBook(presetFile, bookName);
+        } else {
+          await this.switchToBook(bookName);
+        }
+      } else if (index === this.availableBooks.length) {
+        this.customBookName = '';
+        this.importDialog.open();
+      } else if (index === this.availableBooks.length + 1) {
+        this.customBookName = '';
+        this.remoteUrl = '';
+        this.remoteDialog.open();
       }
     });
+  }
+
+  getPresetFile(bookName: string): string {
+    const mapping: Record<string, string> = {
+      'CET-4': 'CET4.json',
+      'CET-6': 'CET6.json',
+      'GRE8000': 'GRE8000.json',
+      'TOEFL': 'TOEFL.json'
+    };
+    return mapping[bookName] || '';
+  }
+
+  async ensureBuiltInBook(fileName: string, bookName: string): Promise<void> {
+    const context = getContext(this) as common.UIAbilityContext;
+    const exists = await DatabaseManager.getInstance().checkBookExists(bookName);
+    if (exists) {
+      await this.switchToBook(bookName);
+      return;
+    }
+
+    promptAction.showToast({ message: '正在初始化词库...' });
+    const count = await WordImporter.importFromRawFile(context, fileName, bookName);
+    if (count > 0) {
+      await this.switchToBook(bookName);
+      promptAction.showToast({ message: `成功导入：${count} 词` });
+      await DatabaseManager.getInstance().registerBook(bookName, 'builtin');
+      await this.loadBooks();
+    } else {
+      promptAction.showToast({ message: `未找到文件: ${fileName}` });
+    }
+  }
+
+  @Builder ImportDialog() {
+    Column({ space: 12 }) {
+      Text('本地导入词书').fontSize(18).fontWeight(FontWeight.Bold);
+      TextInput({ placeholder: '自定义词书名', text: this.customBookName })
+        .onChange((val) => { this.customBookName = val; })
+        .backgroundColor('#F7F9FC').height(52);
+      Row({ space: 12 }) {
+        Button('取消').layoutWeight(1).backgroundColor('#F0F2F5').fontColor('#666').onClick(() => { this.importDialog.close(); });
+        Button('选择文件').layoutWeight(1).backgroundColor('#0A59F7').fontColor(Color.White).onClick(async () => { this.importDialog.close(); await this.confirmLocalImport(); });
+      }.width('100%')
+    }.padding(20).backgroundColor(Color.White).borderRadius({ topLeft: 20, topRight: 20 })
+  }
+
+  @Builder RemoteDialog() {
+    Column({ space: 12 }) {
+      Text('在线词库拉取').fontSize(18).fontWeight(FontWeight.Bold);
+      TextInput({ placeholder: '自定义词书名', text: this.customBookName })
+        .onChange((val) => { this.customBookName = val; })
+        .backgroundColor('#F7F9FC').height(48);
+      TextInput({ placeholder: '请输入 JSON/CSV 地址', text: this.remoteUrl })
+        .onChange((val) => { this.remoteUrl = val; })
+        .backgroundColor('#F7F9FC').height(48);
+      Row({ space: 12 }) {
+        Button('取消').layoutWeight(1).backgroundColor('#F0F2F5').fontColor('#666').onClick(() => { this.remoteDialog.close(); });
+        Button('开始拉取').layoutWeight(1).backgroundColor('#0A59F7').fontColor(Color.White).onClick(async () => { this.remoteDialog.close(); await this.confirmRemoteImport(); });
+      }.width('100%')
+    }.padding(20).backgroundColor(Color.White).borderRadius({ topLeft: 20, topRight: 20 })
+  }
+
+  @Builder TimeDialog() {
+    const parts = this.reminderTime.split(':');
+    const defaultHour = parseInt(parts[0]);
+    const defaultMinute = parseInt(parts[1]);
+    Column({ space: 12 }) {
+      Text('提醒时间').fontSize(18).fontWeight(FontWeight.Bold);
+      TimePicker({ selected: { hour: defaultHour, minute: defaultMinute, second: 0 } })
+        .use24Hour(true)
+        .onChange(async (value) => { await this.onSelectTime(value.hour, value.minute); });
+      Button('完成').width('100%').height(44).backgroundColor('#0A59F7').fontColor(Color.White).onClick(() => { this.timeDialog.close(); });
+    }.padding(20).backgroundColor(Color.White).borderRadius({ topLeft: 20, topRight: 20 })
+  }
+
+  async confirmLocalImport(): Promise<void> {
+    if (!this.customBookName || this.customBookName.trim() === '') {
+      promptAction.showToast({ message: '请输入词书名称' });
+      return;
+    }
+
+    const context = getContext(this) as common.UIAbilityContext;
+    const count = await WordImporter.selectAndImportFile(context, this.customBookName.trim());
+    if (count > 0) {
+      await PreferenceManager.getInstance().addCustomBook(this.customBookName.trim());
+      await DatabaseManager.getInstance().registerBook(this.customBookName.trim(), 'local');
+      await this.switchToBook(this.customBookName.trim());
+      await this.loadBooks();
+      promptAction.showToast({ message: `成功导入 ${count} 个单词` });
+    } else {
+      promptAction.showToast({ message: '导入失败，请检查文件内容' });
+    }
+  }
+
+  async confirmRemoteImport(): Promise<void> {
+    if (!this.customBookName || this.customBookName.trim() === '') {
+      promptAction.showToast({ message: '请输入词书名称' });
+      return;
+    }
+    if (!this.remoteUrl || this.remoteUrl.trim() === '') {
+      promptAction.showToast({ message: '请输入词库链接' });
+      return;
+    }
+
+    const count = await WordImporter.importFromUrl(this.remoteUrl.trim(), this.customBookName.trim());
+    if (count > 0) {
+      await PreferenceManager.getInstance().addCustomBook(this.customBookName.trim());
+      await DatabaseManager.getInstance().registerBook(this.customBookName.trim(), 'online');
+      await this.switchToBook(this.customBookName.trim());
+      await this.loadBooks();
+      promptAction.showToast({ message: `成功拉取 ${count} 个单词` });
+    } else {
+      promptAction.showToast({ message: '网络导入失败或数据为空' });
+    }
+  }
+
+  async toggleReminder(enabled: boolean): Promise<void> {
+    this.reminderEnabled = enabled;
+    await PreferenceManager.getInstance().setReminderEnabled(enabled);
+    if (!enabled) {
+      await ReminderManager.getInstance().cancelReminder();
+    } else {
+      await this.updateReminderSchedule();
+    }
+  }
+
+  async updateReminderSchedule(): Promise<void> {
+    if (!this.reminderEnabled) return;
+    const content = this.reminderSummary || '今日待复习待更新';
+    await ReminderManager.getInstance().scheduleDailyReminder(this.reminderTime, '复习提醒', content);
+  }
+
+  async onSelectTime(hour: number, minute: number): Promise<void> {
+    const h = hour.toString().padStart(2, '0');
+    const m = minute.toString().padStart(2, '0');
+    this.reminderTime = `${h}:${m}`;
+    await PreferenceManager.getInstance().setReminderTime(this.reminderTime);
+    await this.updateReminderSchedule();
   }
 
   generateDateList(): void {
@@ -303,21 +460,53 @@ struct HomePage {
           }
           .layoutWeight(1).scrollBar(BarState.Off)
 
-          // 模式切换
-          Row() {
+          Column({ space: 12 }) {
             Row() {
-              Image($r('sys.media.ohos_ic_public_paste')).width(18).height(18).fillColor(this.reviewMode === 0 ? '#FFF' : '#666')
-              Text('卡片模式').fontSize(14).fontColor(this.reviewMode === 0 ? '#FFF' : '#666').fontWeight(FontWeight.Medium).margin({ left: 6 })
+              Column({ space: 4 }) {
+                Text('学习提醒').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+                Text(this.reminderSummary || '根据任务自动生成提醒内容').fontSize(12).fontColor('#999')
+              }
+              Blank()
+              Toggle({ type: ToggleType.Switch, isOn: this.reminderEnabled }).selectedColor('#0A59F7').onChange(async (isOn) => { await this.toggleReminder(isOn); })
             }
-            .padding({ top: 10, bottom: 10, left: 24, right: 24 }).backgroundColor(this.reviewMode === 0 ? '#0A59F7' : 'transparent').borderRadius(20).animation({ duration: 300 }).onClick(() => { this.toggleMode(0) })
+            Row({ space: 8 }) {
+              Button(`提醒时间 ${this.reminderTime}`).layoutWeight(1).height(42).backgroundColor('#F0F2F5').fontColor('#333').onClick(() => { this.timeDialog.open(); })
+              Button('立即提醒').layoutWeight(1).height(42).backgroundColor('#0A59F7').fontColor(Color.White).onClick(async () => { await ReminderManager.getInstance().publishNotification('复习提醒', this.reminderSummary || '记得复习今日单词'); })
+            }
+          }
+          .width('90%').padding(16).backgroundColor(Color.White).borderRadius(16).shadow({ radius: 10, color: 'rgba(0,0,0,0.05)' }).margin({ bottom: 10 })
+
+          // 模式切换
+          Column({ space: 8 }) {
+            Row() {
+              Row() {
+                Image($r('sys.media.ohos_ic_public_paste')).width(18).height(18).fillColor(this.reviewMode === 0 ? '#FFF' : '#666')
+                Text('卡片模式').fontSize(14).fontColor(this.reviewMode === 0 ? '#FFF' : '#666').fontWeight(FontWeight.Medium).margin({ left: 6 })
+              }
+              .padding({ top: 10, bottom: 10, left: 24, right: 24 }).backgroundColor(this.reviewMode === 0 ? '#0A59F7' : 'transparent').borderRadius(20).animation({ duration: 300 }).onClick(() => { this.toggleMode(0) })
+
+              Row() {
+                Image($r('sys.media.ohos_ic_public_edit')).width(18).height(18).fillColor(this.reviewMode === 1 ? '#FFF' : '#666')
+                Text('拼写模式').fontSize(14).fontColor(this.reviewMode === 1 ? '#FFF' : '#666').fontWeight(FontWeight.Medium).margin({ left: 6 })
+              }
+              .padding({ top: 10, bottom: 10, left: 24, right: 24 }).backgroundColor(this.reviewMode === 1 ? '#0A59F7' : 'transparent').borderRadius(20).animation({ duration: 300 }).onClick(() => { this.toggleMode(1) })
+            }
 
             Row() {
-              Image($r('sys.media.ohos_ic_public_edit')).width(18).height(18).fillColor(this.reviewMode === 1 ? '#FFF' : '#666')
-              Text('拼写模式').fontSize(14).fontColor(this.reviewMode === 1 ? '#FFF' : '#666').fontWeight(FontWeight.Medium).margin({ left: 6 })
+              Row() {
+                Image($r('sys.media.ohos_ic_public_sound')).width(18).height(18).fillColor('#FFF')
+                Text('听写').fontSize(14).fontColor('#FFF').fontWeight(FontWeight.Medium).margin({ left: 6 })
+              }
+              .padding({ top: 10, bottom: 10, left: 20, right: 20 }).backgroundColor('#0A59F7').borderRadius(20).onClick(() => { this.pageStack.pushPath({ name: 'ListenPracticePage' }); })
+
+              Row() {
+                Image($r('sys.media.ohos_ic_public_create')).width(18).height(18).fillColor('#FFF')
+                Text('例句造句').fontSize(14).fontColor('#FFF').fontWeight(FontWeight.Medium).margin({ left: 6 })
+              }
+              .padding({ top: 10, bottom: 10, left: 20, right: 20 }).backgroundColor('#10B981').borderRadius(20).onClick(() => { this.pageStack.pushPath({ name: 'SentencePracticePage' }); })
             }
-            .padding({ top: 10, bottom: 10, left: 24, right: 24 }).backgroundColor(this.reviewMode === 1 ? '#0A59F7' : 'transparent').borderRadius(20).animation({ duration: 300 }).onClick(() => { this.toggleMode(1) })
           }
-          .backgroundColor('#E6E8EB').borderRadius(24).padding(4).margin({ bottom: 10 })
+          .backgroundColor('#E6E8EB').borderRadius(24).padding(8).margin({ bottom: 10 })
 
           Button(this.todayRemaining > 0 ? '开始背单词' : '今日目标已达成')
             .width('85%').height(56)

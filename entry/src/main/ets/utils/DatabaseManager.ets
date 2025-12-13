@@ -50,9 +50,23 @@ export class DatabaseManager {
         try { await store.executeSql('ALTER TABLE words ADD COLUMN note TEXT'); } catch (e) {}
         try { await store.executeSql('UPDATE words SET book_id = "Default Library" WHERE book_id IS NULL OR book_id = ""'); } catch (e) {}
         await store.executeSql(`CREATE TABLE IF NOT EXISTS activity_log (dateStr TEXT PRIMARY KEY, count INTEGER DEFAULT 0)`);
+        await store.executeSql(`
+          CREATE TABLE IF NOT EXISTS books (
+            name TEXT PRIMARY KEY,
+            source TEXT DEFAULT 'builtin'
+          )
+        `);
+        await this.ensureBuiltInBooks(store);
       }
     } catch (err) {
       console.error(`[Lumina] DB Init failed: ${JSON.stringify(err)}`);
+    }
+  }
+
+  private async ensureBuiltInBooks(store: relationalStore.RdbStore): Promise<void> {
+    const builtIns = ['CET-4', 'CET-6', 'GRE8000', 'TOEFL'];
+    for (const name of builtIns) {
+      await this.registerBook(name, 'builtin');
     }
   }
 
@@ -147,7 +161,9 @@ export class DatabaseManager {
   async updateWordInfo(w: Word): Promise<void> { const s=this.rdbStore; if(!s||!w.id)return; const v:ValuesBucket={spelling:w.spelling,phonetic:w.phonetic??'',meaning:w.meaning,example:w.example??'',note:w.note??''}; const p=new relationalStore.RdbPredicates('words'); p.equalTo('id',w.id); await s.update(v,p); }
   async updateWordNote(id: number, note: string): Promise<void> { const s=this.rdbStore; if(!s)return; const v:ValuesBucket={note}; const p=new relationalStore.RdbPredicates('words'); p.equalTo('id',id); await s.update(v,p); }
   async deleteWord(id: number): Promise<void> { const s=this.rdbStore; if(!s)return; const p=new relationalStore.RdbPredicates('words'); p.equalTo('id',id); await s.delete(p); }
-  async batchInsertWords(bookId: string, words: Word[]): Promise<number> { const s=this.rdbStore; if(!s)return 0; let c=0; try{const set=new Set<string>(); const r=await s.querySql('SELECT spelling FROM words WHERE book_id = ?',[bookId]); while(r.goToNextRow())set.add(r.getString(0)); r.close(); s.beginTransaction(); for(const w of words){if(!w.spelling||set.has(w.spelling))continue; const v:ValuesBucket={book_id:bookId,spelling:w.spelling,phonetic:w.phonetic||'',meaning:w.meaning||'',example:w.example||'',note:'',proficiency:0,repetition:0,interval:0,easeFactor:2.5,lastReviewTime:0,nextReviewTime:0}; await s.insert('words',v); c++; set.add(w.spelling);} s.commit(); return c;}catch(e){try{s.rollBack()}catch(er){} return 0;} }
+  async batchInsertWords(bookId: string, words: Word[], source: string = 'local'): Promise<number> { const s=this.rdbStore; if(!s)return 0; let c=0; try{await this.registerBook(bookId, source); const set=new Set<string>(); const r=await s.querySql('SELECT spelling FROM words WHERE book_id = ?',[bookId]); while(r.goToNextRow())set.add(r.getString(0)); r.close(); s.beginTransaction(); for(const w of words){if(!w.spelling||set.has(w.spelling))continue; const v:ValuesBucket={book_id:bookId,spelling:w.spelling,phonetic:w.phonetic||'',meaning:w.meaning||'',example:w.example||'',note:w.note||'',proficiency:0,repetition:0,interval:0,easeFactor:2.5,lastReviewTime:0,nextReviewTime:0}; await s.insert('words',v); c++; set.add(w.spelling);} s.commit(); return c;}catch(e){try{s.rollBack()}catch(er){} return 0;} }
+  async registerBook(bookId: string, source: string = 'local'): Promise<void> { const s=this.rdbStore; if(!s)return; try{await s.executeSql('INSERT OR IGNORE INTO books (name, source) VALUES (?, ?)', [bookId, source]);}catch(e){} }
+  async getAllBooks(): Promise<string[]> { const s=this.rdbStore; if(!s)return []; try{const res=await s.querySql('SELECT name FROM books ORDER BY name ASC'); const list:string[]=[]; while(res.goToNextRow())list.push(res.getString(0)); res.close(); return list;}catch(e){return [];} }
   async calculateStreak(): Promise<number> { const s=this.rdbStore; if(!s)return 0; try{const r=await s.querySql('SELECT dateStr FROM activity_log ORDER BY dateStr DESC'); const d:string[]=[]; while(r.goToNextRow())d.push(r.getString(0)); r.close(); if(d.length===0)return 0; let k=0; const t=new Date(); let h=d.includes(`${t.getFullYear()}-${(t.getMonth()+1).toString().padStart(2,'0')}-${t.getDate().toString().padStart(2,'0')}`); let c=h?new Date():(()=>{const x=new Date();x.setDate(x.getDate()-1);return x;})(); while(true){const str=`${c.getFullYear()}-${(c.getMonth()+1).toString().padStart(2,'0')}-${c.getDate().toString().padStart(2,'0')}`; if(d.includes(str)){k++;c.setDate(c.getDate()-1);}else{break;}} return k;}catch(e){return 0;} }
   async logActivity(): Promise<void> { const s=this.rdbStore; if(!s)return; const d=`${new Date().getFullYear()}-${(new Date().getMonth()+1).toString().padStart(2,'0')}-${new Date().getDate().toString().padStart(2,'0')}`; try{const r=await s.querySql('SELECT count FROM activity_log WHERE dateStr=?',[d]); let c=0; let ex=false; if(r.goToFirstRow()){c=r.getLong(0);ex=true;} r.close(); const v:ValuesBucket={dateStr:d,count:c+1}; if(ex){const p=new relationalStore.RdbPredicates('activity_log'); p.equalTo('dateStr',d); await s.update(v,p);}else{await s.insert('activity_log',v);}}catch(e){} }
   async getActivityStats(days: number=28): Promise<Map<string,number>> { const s=this.rdbStore; const m=new Map<string,number>(); if(!s)return m; try{const r=await s.querySql(`SELECT * FROM activity_log ORDER BY dateStr DESC LIMIT ?`,[days]); while(r.goToNextRow())m.set(r.getString(0),r.getLong(1)); r.close();}catch(e){} return m; }

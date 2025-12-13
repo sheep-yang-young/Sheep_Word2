@@ -4,6 +4,7 @@ import { DatabaseManager } from './DatabaseManager';
 import { Word } from '../model/WordModel';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { http } from '@kit.NetworkKit';
 
 // 定义导入数据的接口
 interface RawImportItem {
@@ -48,14 +49,14 @@ export class WordImporter {
         // [关键修复] 显式断言 JSON.parse 的返回类型
         const rawData = JSON.parse(content) as RawImportItem[];
         if (Array.isArray(rawData)) {
-          return await WordImporter.processJsonData(rawData, bookId);
+          return await WordImporter.processJsonData(rawData, bookId, 'builtin');
         }
       } catch (error) {
         // 不是 JSON，忽略，继续走文本解析
       }
 
       // 走 TXT 解析
-      return await WordImporter.parseContentString(content, bookId);
+      return await WordImporter.parseContentString(content, bookId, 'builtin');
 
     } catch (error) {
       console.error('[Lumina] Import Error:', JSON.stringify(error));
@@ -69,12 +70,12 @@ export class WordImporter {
       const documentViewPicker = new picker.DocumentViewPicker(context);
       const selectOptions = new picker.DocumentSelectOptions();
       selectOptions.maxSelectNumber = 1;
-      selectOptions.fileSuffixFilters = ['.json'];
+      selectOptions.fileSuffixFilters = ['.json', '.csv'];
 
       const uris = await documentViewPicker.select(selectOptions);
       if (uris.length === 0) return 0;
 
-      return await WordImporter.parseAndSaveJson(uris[0], bookId);
+      return await WordImporter.importFromUri(uris[0], bookId);
     } catch (error) {
       return -1;
     }
@@ -100,6 +101,53 @@ export class WordImporter {
     }
   }
 
+  static async importFromUri(uri: string, bookId: string): Promise<number> {
+    const content = await WordImporter.readFileContent(uri);
+    if (!content) return -1;
+
+    const lower = uri.toLowerCase();
+    if (lower.endsWith('.csv')) {
+      return await WordImporter.parseCsvContent(content, bookId);
+    }
+
+    try {
+      const rawData = JSON.parse(content) as RawImportItem[];
+      if (Array.isArray(rawData)) {
+        return await WordImporter.processJsonData(rawData, bookId);
+      }
+    } catch (_) {}
+
+    return await WordImporter.parseContentString(content, bookId);
+  }
+
+  static async importFromUrl(url: string, bookId: string): Promise<number> {
+    try {
+      const httpRequest = http.createHttp();
+      const response = await httpRequest.request(url, { method: http.RequestMethod.GET });
+      httpRequest.destroy();
+      if (!response || !response.result || typeof response.result !== 'string') {
+        return -1;
+      }
+
+      const body = response.result as string;
+      if (url.toLowerCase().endsWith('.csv')) {
+        return await WordImporter.parseCsvContent(body, bookId, 'online');
+      }
+
+      try {
+        const rawData = JSON.parse(body) as RawImportItem[];
+        if (Array.isArray(rawData)) {
+          return await WordImporter.processJsonData(rawData, bookId, 'online');
+        }
+      } catch (_) {}
+
+      return await WordImporter.parseContentString(body, bookId, 'online');
+    } catch (error) {
+      console.error('[Lumina] Remote import failed', JSON.stringify(error));
+      return -1;
+    }
+  }
+
   // --- 辅助逻辑 ---
 
   private static async readFileContent(uri: string): Promise<string> {
@@ -117,18 +165,7 @@ export class WordImporter {
     }
   }
 
-  private static async parseAndSaveJson(uri: string, bookId: string): Promise<number> {
-    try {
-      const content = await WordImporter.readFileContent(uri);
-      // [关键修复] 显式断言类型
-      const rawData = JSON.parse(content) as RawImportItem[];
-      return await WordImporter.processJsonData(rawData, bookId);
-    } catch (error) {
-      return -1;
-    }
-  }
-
-  private static async processJsonData(rawData: RawImportItem[], bookId: string): Promise<number> {
+  private static async processJsonData(rawData: RawImportItem[], bookId: string, source: string = 'local'): Promise<number> {
     const wordList: Word[] = [];
     rawData.forEach((item: RawImportItem) => {
       const spelling = item.word || item.spelling || item.headWord;
@@ -152,12 +189,12 @@ export class WordImporter {
     });
 
     if (wordList.length > 0) {
-      return await DatabaseManager.getInstance().batchInsertWords(bookId, wordList);
+      return await DatabaseManager.getInstance().batchInsertWords(bookId, wordList, source);
     }
     return 0;
   }
 
-  private static async parseContentString(content: string, bookId: string): Promise<number> {
+  private static async parseContentString(content: string, bookId: string, source: string = 'local'): Promise<number> {
     try {
       const lines = content.split(/\r?\n/);
       const wordList: Word[] = [];
@@ -211,11 +248,44 @@ export class WordImporter {
       }
 
       if (wordList.length > 0) {
-        return await DatabaseManager.getInstance().batchInsertWords(bookId, wordList);
+        return await DatabaseManager.getInstance().batchInsertWords(bookId, wordList, source);
       }
       return 0;
     } catch (error) {
       return -1;
     }
+  }
+
+  private static async parseCsvContent(content: string, bookId: string, source: string = 'local'): Promise<number> {
+    const lines = content.split(/\r?\n/);
+    const wordList: Word[] = [];
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const parts = line.split(',');
+      const spelling = parts[0];
+      if (!spelling) continue;
+      const meaning = parts[1] || '暂无释义';
+      const phonetic = parts[2] || '';
+      const example = parts[3] || '';
+      wordList.push({
+        bookId: bookId,
+        spelling: spelling.trim(),
+        phonetic: phonetic.trim(),
+        meaning: meaning.trim(),
+        example: example.trim(),
+        note: '',
+        proficiency: 0,
+        repetition: 0,
+        interval: 0,
+        easeFactor: 2.5,
+        lastReviewTime: 0,
+        nextReviewTime: 0
+      });
+    }
+
+    if (wordList.length > 0) {
+      return await DatabaseManager.getInstance().batchInsertWords(bookId, wordList, source);
+    }
+    return 0;
   }
 }

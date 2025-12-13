@@ -8,7 +8,10 @@ const KEY_HAPTIC_ENABLED = 'haptic_enabled';
 const KEY_REVIEW_MODE = 'review_mode';
 const KEY_TTS_SPEED = 'tts_speed';
 const KEY_CURRENT_BOOK = 'current_book';
+const KEY_CUSTOM_BOOKS = 'custom_books';
 const KEY_FIRST_LAUNCH = 'first_launch_v2'; // 升级key以确保老用户也能看到新引导
+const KEY_REMINDER_ENABLED = 'reminder_enabled';
+const KEY_REMINDER_TIME = 'reminder_time';
 
 export class PreferenceManager {
   private static instance: PreferenceManager;
@@ -58,4 +61,25 @@ export class PreferenceManager {
   async setTtsSpeed(speed: number): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_TTS_SPEED, speed); await this.pref.flush(); }
   async getCurrentBook(): Promise<string> { if (!this.pref) return "Default Library"; return (await this.pref.get(KEY_CURRENT_BOOK, "Default Library")) as string; }
   async setCurrentBook(name: string): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_CURRENT_BOOK, name); await this.pref.flush(); }
+
+  async getCustomBooks(): Promise<string[]> {
+    if (!this.pref) return [];
+    const raw = await this.pref.get(KEY_CUSTOM_BOOKS, '[]');
+    try { return JSON.parse(raw as string) as string[]; } catch (e) { return []; }
+  }
+
+  async addCustomBook(name: string): Promise<void> {
+    if (!this.pref) return;
+    const list = await this.getCustomBooks();
+    if (!list.includes(name)) {
+      list.push(name);
+      await this.pref.put(KEY_CUSTOM_BOOKS, JSON.stringify(list));
+      await this.pref.flush();
+    }
+  }
+
+  async getReminderEnabled(): Promise<boolean> { if (!this.pref) return false; return (await this.pref.get(KEY_REMINDER_ENABLED, false)) as boolean; }
+  async setReminderEnabled(value: boolean): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_REMINDER_ENABLED, value); await this.pref.flush(); }
+  async getReminderTime(): Promise<string> { if (!this.pref) return '08:00'; return (await this.pref.get(KEY_REMINDER_TIME, '08:00')) as string; }
+  async setReminderTime(value: string): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_REMINDER_TIME, value); await this.pref.flush(); }
 }
