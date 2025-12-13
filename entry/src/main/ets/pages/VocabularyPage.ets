@@ -34,9 +34,9 @@ export struct VocabularyPage {
   @Builder DeleteButton(id: number) { Button() { Image($r('sys.media.ohos_ic_public_remove')).width(24).height(24).fillColor(Color.White) }.width(60).height('100%').backgroundColor('#FF4D4F').type(ButtonType.Normal).borderRadius({ topRight: 12, bottomRight: 12 }).onClick(() => { this.deleteWord(id); }) }
 }
 @CustomDialog struct EditWordDialog { controller: CustomDialogController; @State editingWord: Word = { id: 0, bookId: '', spelling: '', meaning: '', phonetic: '', note: '', roots: [], affixes: [], collocations: [], synonyms: [], antonyms: [], derivatives: [], senses: [], knowledgeScore: 0, proficiency: 0, repetition: 0, interval: 0, easeFactor: 0, lastReviewTime: 0, nextReviewTime: 0 }; onConfirm: (word: Word) => void = () => {}; build() { Column({ space: 16 }) { Text('编辑单词').fontSize(20).fontWeight(FontWeight.Bold).width('100%').textAlign(TextAlign.Start); TextInput({ text: this.editingWord.spelling, placeholder: '单词拼写' }).onChange((val) => { this.editingWord.spelling = val }); TextInput({ text: this.editingWord.phonetic, placeholder: '音标 (可选)' }).onChange((val) => { this.editingWord.phonetic = val }); TextArea({ text: this.editingWord.meaning, placeholder: '中文释义' }).height(80).onChange((val) => { this.editingWord.meaning = val }); Row({ space: 12 }) { Button('取消').layoutWeight(1).backgroundColor('#F5F7FA').fontColor('#666').onClick(() => { this.controller.close() }); Button('保存').layoutWeight(1).backgroundColor('#0A59F7').fontColor(Color.White).onClick(() => { this.onConfirm(this.editingWord); this.controller.close(); }) }.width('100%').margin({ top: 10 }) }.padding(24).backgroundColor(Color.White).borderRadius({ topLeft: 24, topRight: 24 }).width('100%') } }
-@CustomDialog struct KnowledgeDialog {
+  @CustomDialog struct KnowledgeDialog {
   controller: CustomDialogController;
-  word: Word;
+  word: Word = { id: 0, bookId: '', spelling: '', meaning: '', phonetic: '', note: '', roots: [], affixes: [], collocations: [], synonyms: [], antonyms: [], derivatives: [], senses: [], knowledgeScore: 0, proficiency: 0, repetition: 0, interval: 0, easeFactor: 0, lastReviewTime: 0, nextReviewTime: 0 };
   onPractice: (word: Word, correct: boolean) => void = () => {};
   @State selectedSense: string = '';
   @State feedback: string = '';
