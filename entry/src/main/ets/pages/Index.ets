@@ -1,6 +1,6 @@
 import { DatabaseManager } from '../utils/DatabaseManager';
 import { WordImporter } from '../utils/WordImporter';
-import { DashboardStats } from '../model/WordModel';
+import { DashboardStats, Word } from '../model/WordModel';
 import { common } from '@kit.AbilityKit';
 import { ReviewPage } from './ReviewPage';
 import { VocabularyPage } from './VocabularyPage';
@@ -107,6 +107,9 @@ struct HomePage {
   @State chartData: number[] = [0, 0, 0, 0, 0];
   @State heatmapData: Map<string, number> = new Map();
   @State dateList: string[] = [];
+  @State focusWords: Word[] = [];
+  @State planNote: string = '';
+  @State completionProgress: number = 0;
 
   // 默认显示占位符，数据加载后会更新
   @State selectedBook: string = "请选择词书";
@@ -157,7 +160,33 @@ struct HomePage {
     this.chartData = await db.getProficiencyDistribution(this.selectedBook);
     this.heatmapData = await db.getActivityStats();
     this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
+    this.focusWords = await db.getSpellingReviewWords(this.selectedBook, 3);
     this.generateDateList();
+    this.updatePlanNote();
+    this.calculateCompletion();
+  }
+
+  calculateCompletion(): void {
+    if (this.stats.total === 0) {
+      this.completionProgress = 0;
+      return;
+    }
+    this.completionProgress = Math.min(100, Math.round((this.stats.mastered / this.stats.total) * 100));
+  }
+
+  updatePlanNote(): void {
+    if (this.stats.total === 0) {
+      this.planNote = '导入词书后即可开始计划';
+      return;
+    }
+
+    if (this.stats.due > this.dailyLimit) {
+      this.planNote = '今日复习量较多，先完成复习再解锁新词';
+    } else if (this.stats.learnedToday >= this.dailyLimit) {
+      this.planNote = '已完成今日目标，可以巩固难词或预习';
+    } else {
+      this.planNote = '按计划学习即可达成今日目标，加油！';
+    }
   }
 
   async toggleMode(mode: number): Promise<void> {
@@ -298,6 +327,14 @@ struct HomePage {
                     .borderRadius(10).margin({ top: 10 })
                 }
               }.margin({ top: 40 })
+
+              this.PlanCard()
+
+              this.OverviewCard()
+
+              if (this.focusWords.length > 0) {
+                this.FocusCard()
+              }
             }
             .width('100%')
           }
@@ -368,5 +405,152 @@ struct HomePage {
       Text(title).fontSize(10).fontColor(this.currentIndex === targetIndex ? '#0A59F7' : '#999').margin({ top: 4 })
     }
     .width('100%').height('100%').justifyContent(FlexAlign.Center)
+  }
+
+  @Builder PlanCard() {
+    CleanCard() {
+      Column({ space: 12 }) {
+        Row() {
+          Column({ space: 4 }) {
+            Text('今日学习路线').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+            Text(this.planNote).fontSize(12).fontColor('#666')
+          }
+          .layoutWeight(1)
+
+          Button({ type: ButtonType.Circle }) {
+            SymbolGlyph($r('sys.symbol.arrow_right')).fontSize(20).fontColor(['#0A59F7'])
+          }
+          .backgroundColor('rgba(10, 89, 247, 0.08)').width(36).height(36).onClick(() => {
+            this.pageStack.pushPath({ name: 'ReviewPage' });
+          })
+        }
+
+        Row({ space: 8 }) {
+          this.StepPill('复习待办', `${this.stats.due} 个`, '#FFF7E6', '#FAAD14')
+          this.StepPill('新词学习', `${this.todayRemaining} 个剩余`, '#E6F4FF', '#1677FF')
+          this.StepPill('巩固提升', '完成后解锁', '#F6FFED', '#52C41A')
+        }
+
+        Column({ space: 8 }) {
+          Row() { Text('每日目标').fontSize(14).fontColor('#666') }
+          Slider({
+            value: this.dailyLimit,
+            min: 10,
+            max: 80,
+            step: 10,
+            style: SliderStyle.OutSet
+          })
+          .blockColor('#0A59F7')
+          .trackColor('#E5E7EB')
+          .selectedColor('#0A59F7')
+          .showSteps(true)
+          .onChange(async (value: number) => {
+            const rounded = Math.round(value);
+            this.dailyLimit = rounded;
+            await PreferenceManager.getInstance().setDailyLimit(rounded);
+            this.todayRemaining = Math.max(0, this.dailyLimit - this.stats.learnedToday);
+            this.updatePlanNote();
+          })
+
+          Row() {
+            Text(`计划 ${this.dailyLimit} 个 / 已学 ${this.stats.learnedToday} 个`).fontSize(12).fontColor('#999')
+          }
+        }
+        .padding({ top: 6 })
+      }
+    }
+  }
+
+  @Builder OverviewCard() {
+    CleanCard() {
+      Column({ space: 12 }) {
+        Row() {
+          Column() {
+            Text('词书概览').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+            Text(this.selectedBook).fontSize(12).fontColor('#666')
+          }
+          .layoutWeight(1)
+
+          Row({ space: 6 }) {
+            this.TagChip('已掌握', `${this.stats.mastered}`, '#52C41A')
+            this.TagChip('总词数', `${this.stats.total}`, '#1677FF')
+          }
+        }
+
+        Column({ space: 6 }) {
+          Row() { Text('掌握进度').fontSize(12).fontColor('#666') }
+          Progress({
+            value: this.completionProgress,
+            total: 100,
+            type: ProgressType.Linear
+          })
+          .color('#0A59F7')
+          .trackColor('#F0F2F5')
+          .width('100%')
+
+          Row() {
+            Text(`${this.completionProgress}%`).fontSize(14).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
+            Blank().layoutWeight(1)
+            Text(`待复习 ${this.stats.due}`).fontSize(12).fontColor('#666')
+          }
+        }
+      }
+    }
+  }
+
+  @Builder FocusCard() {
+    CleanCard() {
+      Column({ space: 12 }) {
+        Row() {
+          Column() { Text('难词巩固').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Text('优先复习低熟练度单词').fontSize(12).fontColor('#666') }
+          .layoutWeight(1)
+          Button('全部单词').backgroundColor('#F5F7FA').fontColor('#0A59F7').height(34).onClick(() => {
+            this.pageStack.pushPath({ name: 'VocabularyPage' });
+          })
+        }
+
+        ForEach(this.focusWords, (item: Word) => {
+          Column() {
+            Row({ space: 8 }) {
+              Column({ space: 2 }) {
+                Text(item.spelling).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+                Text(item.meaning).fontSize(12).fontColor('#666').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .layoutWeight(1)
+
+              this.TagChip('熟练度', `${item.proficiency}%`, this.getProficiencyColor(item.proficiency))
+            }
+          }
+          .width('100%')
+          .padding({ top: 4, bottom: 4 })
+        }, (item: Word) => item.id?.toString() ?? item.spelling)
+      }
+    }
+  }
+
+  getProficiencyColor(p: number): string {
+    if (p < 20) return '#FF4D4F';
+    if (p < 60) return '#FAAD14';
+    return '#52C41A';
+  }
+
+  @Builder StepPill(title: string, desc: string, bg: string, color: string) {
+    Column({ space: 4 }) {
+      Text(title).fontSize(12).fontColor(color).fontWeight(FontWeight.Medium)
+      Text(desc).fontSize(12).fontColor('#1A1A1A')
+    }
+    .padding({ top: 12, bottom: 12, left: 14, right: 14 })
+    .backgroundColor(bg)
+    .borderRadius(16)
+  }
+
+  @Builder TagChip(text: string, value: string, color: string) {
+    Row({ space: 6 }) {
+      Text(text).fontSize(11).fontColor('#666')
+      Text(value).fontSize(12).fontWeight(FontWeight.Medium).fontColor(color)
+    }
+    .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+    .backgroundColor('rgba(10, 89, 247, 0.06)')
+    .borderRadius(16)
   }
 }
