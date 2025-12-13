@@ -493,14 +493,19 @@ struct HomePage {
 
         Column({ space: 6 }) {
           Row() { Text('掌握进度').fontSize(12).fontColor('#666') }
-          Progress({
-            value: this.completionProgress,
-            total: 100,
-            type: ProgressType.Linear
-          })
-          .color('#0A59F7')
-          .trackColor('#F0F2F5')
+          Row() {
+            Progress({
+              value: this.completionProgress,
+              total: 100,
+              type: ProgressType.Linear
+            })
+            .color('#0A59F7')
+            .width('100%')
+          }
           .width('100%')
+          .backgroundColor('#F0F2F5')
+          .borderRadius(6)
+          .padding({ left: 4, right: 4 })
 
           Row() {
             Text(`${this.completionProgress}%`).fontSize(14).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
