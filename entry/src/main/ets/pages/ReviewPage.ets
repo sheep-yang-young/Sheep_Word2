@@ -1,12 +1,13 @@
 import { DatabaseManager } from '../utils/DatabaseManager';
 import { Word } from '../model/WordModel';
-import { Sm2Algorithm, ReviewGrade } from '../utils/Sm2Algorithm';
+import { ReviewGrade } from '../utils/Sm2Algorithm';
 import { CleanCard } from '../components/CustomComponents';
 import { media } from '@kit.MediaKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
 import { vibrator } from '@kit.SensorServiceKit';
+import { commitReviewResult, fetchReviewWords } from '../utils/ReviewSessionHelper';
 
 @Component
 export struct ReviewPage {
@@ -55,7 +56,7 @@ export struct ReviewPage {
     this.ttsSpeed = await prefs.getTtsSpeed();
     this.currentBookId = await prefs.getCurrentBook();
 
-    this.words = await DatabaseManager.getInstance().getTodayReviewWords(this.currentBookId, limit);
+    this.words = await fetchReviewWords(this.currentBookId, limit);
     this.isLoading = false;
 
     if (this.words.length === 0) {
@@ -131,8 +132,7 @@ export struct ReviewPage {
   async submitReview(grade: ReviewGrade): Promise<void> {
     this.triggerHaptic(grade);
     const currentWord = this.words[this.currentIndex];
-    const result = Sm2Algorithm.calculate(currentWord, grade);
-    if (currentWord.id !== undefined) { await DatabaseManager.getInstance().updateWordStats(currentWord.id, result.interval, result.repetition, result.easeFactor); await DatabaseManager.getInstance().logActivity(); }
+    await commitReviewResult(currentWord, grade);
 
     this.refreshFlag++;
 

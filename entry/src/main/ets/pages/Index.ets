@@ -8,6 +8,8 @@ import { SettingsPage } from './SettingsPage';
 import { ZenPage } from './ZenPage';
 import { WelcomePage } from './WelcomePage';
 import { AboutPage } from './AboutPage';
+import { ListenPracticePage } from './ListenPracticePage';
+import { SentencePracticePage } from './SentencePracticePage';
 import { SimpleLineChart, CleanCard } from '../components/CustomComponents';
 import { PreferenceManager } from '../utils/PreferenceManager';
 import { promptAction } from '@kit.ArkUI';
@@ -64,6 +66,8 @@ struct Index {
     else if (name === 'SettingsPage') { SettingsPage() }
     else if (name === 'ZenPage') { ZenPage() }
     else if (name === 'AboutPage') { AboutPage() }
+    else if (name === 'ListenPracticePage') { ListenPracticePage() }
+    else if (name === 'SentencePracticePage') { SentencePracticePage() }
   }
 
   build() {
@@ -304,20 +308,42 @@ struct HomePage {
           .layoutWeight(1).scrollBar(BarState.Off)
 
           // 模式切换
-          Row() {
+          Column({ space: 8 }) {
             Row() {
-              Image($r('sys.media.ohos_ic_public_paste')).width(18).height(18).fillColor(this.reviewMode === 0 ? '#FFF' : '#666')
-              Text('卡片模式').fontSize(14).fontColor(this.reviewMode === 0 ? '#FFF' : '#666').fontWeight(FontWeight.Medium).margin({ left: 6 })
-            }
-            .padding({ top: 10, bottom: 10, left: 24, right: 24 }).backgroundColor(this.reviewMode === 0 ? '#0A59F7' : 'transparent').borderRadius(20).animation({ duration: 300 }).onClick(() => { this.toggleMode(0) })
+              Row() {
+                Image($r('sys.media.ohos_ic_public_paste')).width(18).height(18).fillColor(this.reviewMode === 0 ? '#FFF' : '#666')
+                Text('卡片模式').fontSize(14).fontColor(this.reviewMode === 0 ? '#FFF' : '#666').fontWeight(FontWeight.Medium).margin({ left: 6 })
+              }
+              .padding({ top: 10, bottom: 10, left: 24, right: 24 }).backgroundColor(this.reviewMode === 0 ? '#0A59F7' : 'transparent').borderRadius(20).animation({ duration: 300 }).onClick(() => { this.toggleMode(0) })
 
-            Row() {
-              Image($r('sys.media.ohos_ic_public_edit')).width(18).height(18).fillColor(this.reviewMode === 1 ? '#FFF' : '#666')
-              Text('拼写模式').fontSize(14).fontColor(this.reviewMode === 1 ? '#FFF' : '#666').fontWeight(FontWeight.Medium).margin({ left: 6 })
+              Row() {
+                Image($r('sys.media.ohos_ic_public_edit')).width(18).height(18).fillColor(this.reviewMode === 1 ? '#FFF' : '#666')
+                Text('拼写模式').fontSize(14).fontColor(this.reviewMode === 1 ? '#FFF' : '#666').fontWeight(FontWeight.Medium).margin({ left: 6 })
+              }
+              .padding({ top: 10, bottom: 10, left: 24, right: 24 }).backgroundColor(this.reviewMode === 1 ? '#0A59F7' : 'transparent').borderRadius(20).animation({ duration: 300 }).onClick(() => { this.toggleMode(1) })
             }
-            .padding({ top: 10, bottom: 10, left: 24, right: 24 }).backgroundColor(this.reviewMode === 1 ? '#0A59F7' : 'transparent').borderRadius(20).animation({ duration: 300 }).onClick(() => { this.toggleMode(1) })
+
+            Row({ space: 10 }) {
+              Button('听写')
+                .layoutWeight(1)
+                .height(44)
+                .backgroundColor('#FFF')
+                .fontColor('#0A59F7')
+                .fontWeight(FontWeight.Medium)
+                .borderRadius(16)
+                .onClick(() => { this.pageStack.pushPath({ name: 'ListenPracticePage' }) })
+
+              Button('例句练习')
+                .layoutWeight(1)
+                .height(44)
+                .backgroundColor('#FFF')
+                .fontColor('#7C3AED')
+                .fontWeight(FontWeight.Medium)
+                .borderRadius(16)
+                .onClick(() => { this.pageStack.pushPath({ name: 'SentencePracticePage' }) })
+            }
           }
-          .backgroundColor('#E6E8EB').borderRadius(24).padding(4).margin({ bottom: 10 })
+          .backgroundColor('#E6E8EB').borderRadius(24).padding(8).margin({ bottom: 10 })
 
           Button(this.todayRemaining > 0 ? '开始背单词' : '今日目标已达成')
             .width('85%').height(56)
