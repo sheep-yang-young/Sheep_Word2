@@ -26,24 +26,29 @@ export struct PracticeHubPage {
 
       Scroll() {
         Column({ space: 14 }) {
-          this.previewWords.length === 0
-            ? Text('当前词书暂无单词，先去导入或学习吧~').fontSize(14).fontColor('#666').padding({ left: 16, right: 16 })
-            : CleanCard() {
-                Column({ space: 8 }) {
-                  Text('今日精选').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
-                  Text('从当前词书随机挑选，帮助快速进入状态').fontSize(12).fontColor('#666')
-                  ForEach(this.previewWords, (item: Word) => {
-                    Row() {
-                      Column() {
-                        Text(item.spelling).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#0A59F7')
-                        Text(item.meaning).fontSize(12).fontColor('#666').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                      }
-                      .layoutWeight(1)
-                      if (item.phonetic) { Text(item.phonetic).fontSize(12).fontColor('#999') }
+          if (this.previewWords.length === 0) {
+            Text('当前词书暂无单词，先去导入或学习吧~')
+              .fontSize(14)
+              .fontColor('#666')
+              .padding({ left: 16, right: 16 })
+          } else {
+            CleanCard() {
+              Column({ space: 8 }) {
+                Text('今日精选').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+                Text('从当前词书随机挑选，帮助快速进入状态').fontSize(12).fontColor('#666')
+                ForEach(this.previewWords, (item: Word) => {
+                  Row() {
+                    Column() {
+                      Text(item.spelling).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#0A59F7')
+                      Text(item.meaning).fontSize(12).fontColor('#666').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
                     }
-                  }, (item: Word) => item.id?.toString() ?? item.spelling)
-                }
+                    .layoutWeight(1)
+                    if (item.phonetic) { Text(item.phonetic).fontSize(12).fontColor('#999') }
+                  }
+                }, (item: Word) => item.id?.toString() ?? item.spelling)
               }
+            }
+          }
 
           this.ModeCard('拼写挑战', '根据释义拼写单词，错误高亮立即反馈', '#E6F4FF', '#1677FF', () => {
             this.pageStack.pushPath({ name: 'SpellChallengePage' })
