@@ -7,6 +7,18 @@ export interface Word {
   example?: string;
   note?: string;
 
+  // 拓展词汇知识
+  roots?: string[];
+  affixes?: string[];
+  collocations?: string[];
+  synonyms?: string[];
+  antonyms?: string[];
+  derivatives?: string[];
+  senses?: string[];
+
+  // 练习反馈
+  knowledgeScore?: number;
+
   // SM-2 记忆算法字段
   proficiency: number;
   repetition: number;
