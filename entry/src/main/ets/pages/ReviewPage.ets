@@ -269,11 +269,18 @@ export struct ReviewPage {
     if (!items || items.length === 0) return;
     Column({ space: 8 }) {
       Text(title).fontSize(12).fontColor('#0F172A').fontWeight(FontWeight.Medium)
-      Wrap() {
+      Flex({ wrap: FlexWrap.Wrap }) {
         ForEach(items, (item: string, index?: number) => {
-          Text(item).padding({ left: 10, right: 10, top: 6, bottom: 6 }).backgroundColor(bgColor).borderRadius(10).fontColor('#111827').fontSize(12)
+          Text(item)
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+            .margin({ right: 8, bottom: 8 })
+            .backgroundColor(bgColor)
+            .borderRadius(10)
+            .fontColor('#111827')
+            .fontSize(12)
         }, (item: string, index?: number) => `${item}-${index}`)
-      }.width('100%')
+      }
+      .width('100%')
     }
     .padding(12)
     .backgroundColor(Color.White)
