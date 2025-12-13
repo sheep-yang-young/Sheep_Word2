@@ -1,12 +1,26 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "storeFile": "C:/Users/Sheep_Young/LuminaWord.p12",
+          "storePassword": "0000001BA4E10AA95954726CD305028ADB63438DC1D67677343DCDB327B9707D9D593830E5CE530FCCCC55",
+          "keyAlias": "LuminaWord",
+          "keyPassword": "0000001B8C4E9B95BEE620440C5EB7BD1B91EF6E8D4172F1363DB6A9BA7171501E93A854AE9421A45544BC",
+          "signAlg": "SHA256withECDSA",
+          "profile": "C:/Users/Sheep_Young/Desktop/LuminaWordRelease.p7b",
+          "certpath": "C:/Users/Sheep_Young/Desktop/LuminaWord.cer"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
         "signingConfig": "default",
         "targetSdkVersion": "6.0.0(20)",
-        "compatibleSdkVersion": "6.0.0(20)",
+        "compatibleSdkVersion": "5.1.0(18)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {

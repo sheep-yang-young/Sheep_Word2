@@ -1,7 +1,7 @@
 {
   "app": {
-    "bundleName": "com.Sheep.Sheepword",
-    "vendor": "example",
+    "bundleName": "com.Sheep.Lumina",
+    "vendor": "Sheep",
     "versionCode": 1000000,
     "versionName": "1.0.0",
     "icon": "$media:layered_image",

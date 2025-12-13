@@ -14,23 +14,22 @@ export struct SimpleLineChart {
         })
     }
     .width('100%')
-    .height(200)
+    .height(150)
     .backgroundColor(Color.White)
     .borderRadius(16)
-    .shadow({ radius: 10, color: 'rgba(0,0,0,0.05)' })
   }
 
-  drawChart() {
+  drawChart(): void {
     const ctx = this.context;
     const width = ctx.width;
     const height = ctx.height;
-    const padding = 20;
+    const padding = 10;
 
     ctx.clearRect(0, 0, width, height);
 
     if (!this.data || this.data.length === 0) return;
 
-    const maxVal = Math.max(...this.data, 10);
+    const maxVal = Math.max(...this.data, 5);
     const stepX = (width - padding * 2) / (this.data.length > 1 ? this.data.length - 1 : 1);
     const scaleY = (height - padding * 2) / maxVal;
 
@@ -38,6 +37,7 @@ export struct SimpleLineChart {
     ctx.lineWidth = 3;
     ctx.strokeStyle = '#0A59F7';
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
     this.data.forEach((val, index) => {
       const x = padding + index * stepX;
@@ -47,12 +47,18 @@ export struct SimpleLineChart {
     });
     ctx.stroke();
 
+    ctx.lineTo(width - padding, height - padding);
+    ctx.lineTo(padding, height - padding);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(10, 89, 247, 0.1)';
+    ctx.fill();
+
     ctx.fillStyle = '#0A59F7';
     this.data.forEach((val, index) => {
       const x = padding + index * stepX;
       const y = height - padding - (val * scaleY);
       ctx.beginPath();
-      ctx.arc(x, y, 4, 0, 6.28);
+      ctx.arc(x, y, 3, 0, 6.28);
       ctx.fill();
     });
   }

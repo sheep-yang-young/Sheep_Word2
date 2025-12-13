@@ -1,43 +1,25 @@
 import { fileIo as fs, picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { DatabaseManager } from './DatabaseManager';
-import { Word } from '../model/WordModel';
 
 export class WordExporter {
-
-  static async exportData(context: common.UIAbilityContext): Promise<boolean> {
+  static async exportData(context: common.UIAbilityContext, bookId: string): Promise<boolean> {
     try {
-      // 1. 从数据库获取所有单词（不分页，查全量）
-      // 我们复用 searchWords 查所有
-      const allWords = await DatabaseManager.getInstance().searchWords('');
-
+      const allWords = await DatabaseManager.getInstance().searchWords(bookId, '');
       if (allWords.length === 0) return false;
-
-      // 2. 转换为 JSON 字符串
       const jsonStr = JSON.stringify(allWords, null, 2);
-
-      // 3. 创建文件保存选项
-      const documentSaveOptions = new picker.DocumentSaveOptions();
-      documentSaveOptions.newFileNames = [`Lumina_Backup_${new Date().getTime()}.json`];
-      documentSaveOptions.fileSuffixChoices = ['.json'];
-
-      // 4. 拉起系统保存页面
-      const documentViewPicker = new picker.DocumentViewPicker(context);
-      const uris = await documentViewPicker.save(documentSaveOptions);
-
+      const opt = new picker.DocumentSaveOptions();
+      opt.newFileNames = [`Lumina_${bookId}_Backup.json`];
+      opt.fileSuffixChoices = ['.json'];
+      const view = new picker.DocumentViewPicker(context);
+      const uris = await view.save(opt);
       if (uris.length > 0) {
-        // 5. 写入数据
-        const uri = uris[0];
-        const file = fs.openSync(uri, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE);
-        fs.writeSync(file.fd, jsonStr);
-        fs.closeSync(file);
+        const f = fs.openSync(uris[0], fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE);
+        fs.writeSync(f.fd, jsonStr);
+        fs.closeSync(f);
         return true;
       }
       return false;
-
-    } catch (e) {
-      console.error('[Lumina] Export failed:', e);
-      return false;
-    }
+    } catch (e) { return false; }
   }
 }

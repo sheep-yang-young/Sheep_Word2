@@ -3,8 +3,12 @@ import { common } from '@kit.AbilityKit';
 
 const PREF_NAME = 'LuminaPrefs';
 const KEY_DAILY_LIMIT = 'daily_limit';
-const KEY_ACCENT_TYPE = 'accent_type'; // 1=UK, 2=US
-const KEY_HAPTIC_ENABLED = 'haptic_enabled'; // boolean
+const KEY_ACCENT_TYPE = 'accent_type';
+const KEY_HAPTIC_ENABLED = 'haptic_enabled';
+const KEY_REVIEW_MODE = 'review_mode';
+const KEY_TTS_SPEED = 'tts_speed';
+const KEY_CURRENT_BOOK = 'current_book';
+const KEY_FIRST_LAUNCH = 'first_launch_v2'; // 升级key以确保老用户也能看到新引导
 
 export class PreferenceManager {
   private static instance: PreferenceManager;
@@ -28,39 +32,30 @@ export class PreferenceManager {
     }
   }
 
-  // --- 每日目标 ---
-  async getDailyLimit(): Promise<number> {
-    if (!this.pref) return 20;
-    return (await this.pref.get(KEY_DAILY_LIMIT, 20)) as number;
+  // [新增] 是否首次启动
+  async isFirstLaunch(): Promise<boolean> {
+    if (!this.pref) return true;
+    return (await this.pref.get(KEY_FIRST_LAUNCH, true)) as boolean;
   }
 
-  async setDailyLimit(limit: number): Promise<void> {
+  // [新增] 设置非首次启动
+  async setFirstLaunch(isFirst: boolean): Promise<void> {
     if (!this.pref) return;
-    await this.pref.put(KEY_DAILY_LIMIT, limit);
+    await this.pref.put(KEY_FIRST_LAUNCH, isFirst);
     await this.pref.flush();
   }
 
-  // --- 口音设置 (1:英音, 2:美音) ---
-  async getAccentType(): Promise<number> {
-    if (!this.pref) return 2; // 默认美音
-    return (await this.pref.get(KEY_ACCENT_TYPE, 2)) as number;
-  }
-
-  async setAccentType(type: number): Promise<void> {
-    if (!this.pref) return;
-    await this.pref.put(KEY_ACCENT_TYPE, type);
-    await this.pref.flush();
-  }
-
-  // --- 振动反馈 ---
-  async isHapticEnabled(): Promise<boolean> {
-    if (!this.pref) return true; // 默认开启
-    return (await this.pref.get(KEY_HAPTIC_ENABLED, true)) as boolean;
-  }
-
-  async setHapticEnabled(enabled: boolean): Promise<void> {
-    if (!this.pref) return;
-    await this.pref.put(KEY_HAPTIC_ENABLED, enabled);
-    await this.pref.flush();
-  }
+  // ... (保持其他所有 getter/setter 不变，直接复制即可)
+  async getDailyLimit(): Promise<number> { if (!this.pref) return 20; return (await this.pref.get(KEY_DAILY_LIMIT, 20)) as number; }
+  async setDailyLimit(limit: number): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_DAILY_LIMIT, limit); await this.pref.flush(); }
+  async getAccentType(): Promise<number> { if (!this.pref) return 2; return (await this.pref.get(KEY_ACCENT_TYPE, 2)) as number; }
+  async setAccentType(type: number): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_ACCENT_TYPE, type); await this.pref.flush(); }
+  async isHapticEnabled(): Promise<boolean> { if (!this.pref) return true; return (await this.pref.get(KEY_HAPTIC_ENABLED, true)) as boolean; }
+  async setHapticEnabled(enabled: boolean): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_HAPTIC_ENABLED, enabled); await this.pref.flush(); }
+  async getReviewMode(): Promise<number> { if (!this.pref) return 0; return (await this.pref.get(KEY_REVIEW_MODE, 0)) as number; }
+  async setReviewMode(mode: number): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_REVIEW_MODE, mode); await this.pref.flush(); }
+  async getTtsSpeed(): Promise<number> { if (!this.pref) return 1.0; return (await this.pref.get(KEY_TTS_SPEED, 1.0)) as number; }
+  async setTtsSpeed(speed: number): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_TTS_SPEED, speed); await this.pref.flush(); }
+  async getCurrentBook(): Promise<string> { if (!this.pref) return "Default Library"; return (await this.pref.get(KEY_CURRENT_BOOK, "Default Library")) as string; }
+  async setCurrentBook(name: string): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_CURRENT_BOOK, name); await this.pref.flush(); }
 }
