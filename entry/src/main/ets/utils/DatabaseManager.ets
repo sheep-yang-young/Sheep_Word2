@@ -11,6 +11,57 @@ export class DatabaseManager {
 
   private constructor() {}
 
+  private async setupSchema(store: relationalStore.RdbStore): Promise<void> {
+    await store.executeSql(`
+      CREATE TABLE IF NOT EXISTS words (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        book_id TEXT,
+        spelling TEXT NOT NULL,
+        phonetic TEXT,
+        meaning TEXT,
+        example TEXT,
+        note TEXT,
+        roots TEXT,
+        affixes TEXT,
+        collocations TEXT,
+        synonyms TEXT,
+        antonyms TEXT,
+        derivatives TEXT,
+        senses TEXT,
+        knowledgeScore INTEGER DEFAULT 0,
+        proficiency INTEGER DEFAULT 0,
+        repetition INTEGER DEFAULT 0,
+        interval INTEGER DEFAULT 0,
+        easeFactor REAL DEFAULT 2.5,
+        lastReviewTime INTEGER DEFAULT 0,
+        nextReviewTime INTEGER DEFAULT 0
+      )
+    `);
+
+    // 兼容旧版本：确保新增字段存在
+    const optionalColumns: { name: string, type: string }[] = [
+      { name: 'book_id', type: 'TEXT' },
+      { name: 'note', type: 'TEXT' },
+      { name: 'roots', type: 'TEXT' },
+      { name: 'affixes', type: 'TEXT' },
+      { name: 'collocations', type: 'TEXT' },
+      { name: 'synonyms', type: 'TEXT' },
+      { name: 'antonyms', type: 'TEXT' },
+      { name: 'derivatives', type: 'TEXT' },
+      { name: 'senses', type: 'TEXT' },
+      { name: 'knowledgeScore', type: 'INTEGER' }
+    ];
+
+    for (const col of optionalColumns) {
+      try {
+        await store.executeSql(`ALTER TABLE words ADD COLUMN ${col.name} ${col.type}`);
+      } catch (e) {}
+    }
+
+    try { await store.executeSql('UPDATE words SET book_id = "Default Library" WHERE book_id IS NULL OR book_id = ""'); } catch (e) {}
+    await store.executeSql(`CREATE TABLE IF NOT EXISTS activity_log (dateStr TEXT PRIMARY KEY, count INTEGER DEFAULT 0)`);
+  }
+
   public static getInstance(): DatabaseManager {
     if (!DatabaseManager.instance) {
       DatabaseManager.instance = new DatabaseManager();
@@ -29,37 +80,7 @@ export class DatabaseManager {
 
       const store = this.rdbStore;
       if (store) {
-        await store.executeSql(`
-          CREATE TABLE IF NOT EXISTS words (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            book_id TEXT,
-            spelling TEXT NOT NULL,
-            phonetic TEXT,
-            meaning TEXT,
-            example TEXT,
-            note TEXT,
-            roots TEXT,
-            affixes TEXT,
-            collocations TEXT,
-            synonyms TEXT,
-            antonyms TEXT,
-            derivatives TEXT,
-            senses TEXT,
-            knowledgeScore INTEGER DEFAULT 0,
-            proficiency INTEGER DEFAULT 0,
-            repetition INTEGER DEFAULT 0,
-            interval INTEGER DEFAULT 0,
-            easeFactor REAL DEFAULT 2.5,
-            lastReviewTime INTEGER DEFAULT 0,
-            nextReviewTime INTEGER DEFAULT 0
-          )
-        `);
-        const columns = ['book_id', 'note', 'roots', 'affixes', 'collocations', 'synonyms', 'antonyms', 'derivatives', 'senses', 'knowledgeScore'];
-        for (const col of columns) {
-          try { await store.executeSql(`ALTER TABLE words ADD COLUMN ${col} TEXT`); } catch (e) {}
-        }
-        try { await store.executeSql('UPDATE words SET book_id = "Default Library" WHERE book_id IS NULL OR book_id = ""'); } catch (e) {}
-        await store.executeSql(`CREATE TABLE IF NOT EXISTS activity_log (dateStr TEXT PRIMARY KEY, count INTEGER DEFAULT 0)`);
+        await this.setupSchema(store);
       }
     } catch (err) {
       console.error(`[Lumina] DB Init failed: ${JSON.stringify(err)}`);
@@ -98,7 +119,7 @@ export class DatabaseManager {
     } catch (e) { return []; }
   }
 
-  async getDashboardStats(bookId: string): Promise<DashboardStats> {
+  async getDashboardStats(bookId: string, dailyLimit: number = 20): Promise<DashboardStats> {
     let stats = new DashboardStats();
     const store = this.rdbStore;
     if (!store) return stats;
@@ -122,13 +143,23 @@ export class DatabaseManager {
       if (masterRes.goToFirstRow()) stats.mastered = masterRes.getLong(0);
       masterRes.close();
 
-      // Due
+      // Due (reviews)
       const dueRes = await store.querySql(
         'SELECT count(*) FROM words WHERE book_id = ? AND lastReviewTime > 0 AND nextReviewTime <= ?',
         [bookId, endOfToday.getTime()]
       );
-      if (dueRes.goToFirstRow()) stats.due = dueRes.getLong(0);
+      if (dueRes.goToFirstRow()) stats.dueReviews = dueRes.getLong(0);
       dueRes.close();
+
+      // New words for today (cap by daily plan)
+      const newRes = await store.querySql(
+        'SELECT count(*) FROM (SELECT id FROM words WHERE book_id = ? AND lastReviewTime = 0 LIMIT ?)',
+        [bookId, dailyLimit]
+      );
+      if (newRes.goToFirstRow()) stats.newToday = newRes.getLong(0);
+      newRes.close();
+
+      stats.due = stats.dueReviews + stats.newToday;
 
       stats.streak = await this.calculateStreak();
       return stats;
@@ -167,6 +198,78 @@ export class DatabaseManager {
 
   async cleanAllData(): Promise<void> { const s=this.rdbStore; if(!s)return; try{await s.executeSql('DELETE FROM words'); await s.executeSql('DELETE FROM sqlite_sequence WHERE name="words"'); await s.executeSql('DELETE FROM activity_log');}catch(e){} }
   async resetLearningProgress(bookId: string): Promise<void> { const s=this.rdbStore; if(!s)return; const v:ValuesBucket={proficiency:0,repetition:0,interval:0,easeFactor:2.5,lastReviewTime:0,nextReviewTime:0}; const p=new relationalStore.RdbPredicates('words'); p.equalTo('book_id',bookId); await s.update(v,p); }
+
+  /**
+   * 重建数据库：备份当前数据，重新创建表结构，再写回，确保字段和默认值一致。
+   */
+  async rebuildDatabase(): Promise<boolean> {
+    const store = this.rdbStore;
+    if (!store) return false;
+
+    let wordsBackup: Word[] = [];
+    const activityBackup: { dateStr: string, count: number }[] = [];
+
+    try {
+      // 备份单词表
+      const wordsRes = await store.querySql('SELECT * FROM words');
+      while (wordsRes.goToNextRow()) wordsBackup.push(this.mapRowToWord(wordsRes));
+      wordsRes.close();
+
+      // 备份打卡记录
+      try {
+        const actRes = await store.querySql('SELECT dateStr, count FROM activity_log');
+        while (actRes.goToNextRow()) activityBackup.push({ dateStr: actRes.getString(0), count: actRes.getLong(1) });
+        actRes.close();
+      } catch (e) {}
+
+      // 重建表结构
+      await store.executeSql('DROP TABLE IF EXISTS words');
+      await store.executeSql('DROP TABLE IF EXISTS activity_log');
+      try { await store.executeSql('DELETE FROM sqlite_sequence WHERE name="words"'); } catch (e) {}
+
+      await this.setupSchema(store);
+
+      // 回写数据
+      store.beginTransaction();
+      for (const w of wordsBackup) {
+        const values: ValuesBucket = {
+          book_id: w.bookId,
+          spelling: w.spelling,
+          phonetic: w.phonetic ?? '',
+          meaning: w.meaning ?? '',
+          example: w.example ?? '',
+          note: w.note ?? '',
+          roots: this.serializeArray(w.roots),
+          affixes: this.serializeArray(w.affixes),
+          collocations: this.serializeArray(w.collocations),
+          synonyms: this.serializeArray(w.synonyms),
+          antonyms: this.serializeArray(w.antonyms),
+          derivatives: this.serializeArray(w.derivatives),
+          senses: this.serializeArray(w.senses),
+          knowledgeScore: w.knowledgeScore ?? 0,
+          proficiency: w.proficiency ?? 0,
+          repetition: w.repetition ?? 0,
+          interval: w.interval ?? 0,
+          easeFactor: w.easeFactor ?? 2.5,
+          lastReviewTime: w.lastReviewTime ?? 0,
+          nextReviewTime: w.nextReviewTime ?? 0
+        };
+        await store.insert('words', values);
+      }
+
+      for (const a of activityBackup) {
+        const values: ValuesBucket = { dateStr: a.dateStr, count: a.count };
+        await store.insert('activity_log', values);
+      }
+
+      store.commit();
+      return true;
+    } catch (e) {
+      try { store.rollBack(); } catch (er) {}
+      console.error('[Lumina] Failed to rebuild database', e);
+      return false;
+    }
+  }
 
   async calculateStreak(): Promise<number> { const s=this.rdbStore; if(!s)return 0; try{const r=await s.querySql('SELECT dateStr FROM activity_log ORDER BY dateStr DESC'); const d:string[]=[]; while(r.goToNextRow())d.push(r.getString(0)); r.close(); if(d.length===0)return 0; let k=0; const t=new Date(); let h=d.includes(`${t.getFullYear()}-${(t.getMonth()+1).toString().padStart(2,'0')}-${t.getDate().toString().padStart(2,'0')}`); let c=h?new Date():(()=>{const x=new Date();x.setDate(x.getDate()-1);return x;})(); while(true){const str=`${c.getFullYear()}-${(c.getMonth()+1).toString().padStart(2,'0')}-${c.getDate().toString().padStart(2,'0')}`; if(d.includes(str)){k++;c.setDate(c.getDate()-1);}else{break;}} return k;}catch(e){return 0;} }
   async logActivity(): Promise<void> { const s=this.rdbStore; if(!s)return; const d=`${new Date().getFullYear()}-${(new Date().getMonth()+1).toString().padStart(2,'0')}-${new Date().getDate().toString().padStart(2,'0')}`; try{const r=await s.querySql('SELECT count FROM activity_log WHERE dateStr=?',[d]); let c=0; let ex=false; if(r.goToFirstRow()){c=r.getLong(0);ex=true;} r.close(); const v:ValuesBucket={dateStr:d,count:c+1}; if(ex){const p=new relationalStore.RdbPredicates('activity_log'); p.equalTo('dateStr',d); await s.update(v,p);}else{await s.insert('activity_log',v);}}catch(e){} }

@@ -158,10 +158,10 @@ struct HomePage {
 
     // 先拿到用户设定的每日上限，避免使用旧值计算剩余额度
     this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
-    this.stats = await db.getDashboardStats(this.selectedBook);
+    this.stats = await db.getDashboardStats(this.selectedBook, this.dailyLimit);
     this.chartData = await db.getProficiencyDistribution(this.selectedBook);
     this.heatmapData = await db.getActivityStats();
-    this.todayRemaining = Math.max(0, this.dailyLimit - this.stats.learnedToday);
+    this.todayRemaining = this.getTotalPending();
     this.focusWords = await db.getSpellingReviewWords(this.selectedBook, 3);
     this.generateDateList();
     this.updatePlanNote();
@@ -174,11 +174,18 @@ struct HomePage {
   }
 
   updatePlanNote(): void {
+    const pendingReviews = this.stats.dueReviews || 0;
+    const pendingNew = this.stats.newToday || 0;
+    const pendingTotal = pendingReviews + pendingNew;
+
     if (this.stats.total === 0) { this.planNote = '导入词书后即可开始计划'; return; }
-    if (this.stats.due > this.dailyLimit) { this.planNote = '今日复习量较多，先完成复习再解锁新词'; }
-    else if (this.stats.learnedToday >= this.dailyLimit) { this.planNote = '已完成今日目标，可以巩固难词或预习'; }
+    if (pendingTotal === 0) { this.planNote = '已完成今日计划，可以巩固难词或预习'; return; }
+    if (pendingReviews > this.dailyLimit) { this.planNote = '今日复习量较多，先完成复习再解锁新词'; }
+    else if (this.stats.learnedToday >= this.dailyLimit && pendingReviews === 0) { this.planNote = '已完成今日新词目标，可以巩固难词或预习'; }
     else { this.planNote = '按计划学习即可达成今日目标，加油！'; }
   }
+
+  getTotalPending(): number { return Math.max(0, (this.stats.dueReviews || 0) + (this.stats.newToday || 0)); }
 
   async toggleMode(mode: number): Promise<void> {
     this.reviewMode = mode;
@@ -291,14 +298,14 @@ struct HomePage {
                   .strokeWidth(20).fill(Color.Transparent).stroke('#0A59F7')
                   .rotate({ angle: -90 })
                   .strokeDashArray([
-                    (this.stats.learnedToday + this.stats.due) > 0
-                      ? (this.stats.learnedToday / (this.stats.learnedToday + this.stats.due)) * 692
+                    (this.stats.learnedToday + this.getTotalPending()) > 0
+                      ? (this.stats.learnedToday / (this.stats.learnedToday + this.getTotalPending())) * 692
                       : 0,
                     692
                   ])
                   .animation({ duration: 500, curve: Curve.EaseOut })
                 Column() {
-                  Text(this.stats.due.toString()).fontSize(64).fontWeight(FontWeight.Bolder).fontColor('#1A1A1A')
+                  Text(this.getTotalPending().toString()).fontSize(64).fontWeight(FontWeight.Bolder).fontColor('#1A1A1A')
                   Text('Due Today').fontSize(14).fontColor('#999').margin({ top: 5 })
                   Text(`Done: ${this.stats.learnedToday}`)
                     .fontSize(14).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
@@ -355,12 +362,12 @@ struct HomePage {
           .margin({ bottom: 10 })
 
           // --- 开始按钮 (自适应宽度，无Slider) ---
-          Button(this.stats.due > 0 ? 'Start Review Session' : 'All Done for Today!')
+          Button(this.getTotalPending() > 0 ? 'Start Review Session' : 'All Done for Today!')
             .height(56)
             .padding({ left: 40, right: 40 })
-            .backgroundColor(this.stats.due > 0 ? '#0A59F7' : '#52C41A')
+            .backgroundColor(this.getTotalPending() > 0 ? '#0A59F7' : '#52C41A')
             .fontColor(Color.White).fontSize(18).fontWeight(FontWeight.Medium)
-            .shadow({ radius: 20, color: this.stats.due > 0 ? 'rgba(10, 89, 247, 0.3)' : 'rgba(82, 196, 26, 0.3)', offsetY: 10 })
+            .shadow({ radius: 20, color: this.getTotalPending() > 0 ? 'rgba(10, 89, 247, 0.3)' : 'rgba(82, 196, 26, 0.3)', offsetY: 10 })
             .onClick(() => { this.pageStack.pushPath({ name: 'ReviewPage' }); })
             .margin({ bottom: 30, top: 5 })
         }
