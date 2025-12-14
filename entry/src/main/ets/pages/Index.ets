@@ -116,14 +116,26 @@ struct HomePage {
   async aboutToAppear(): Promise<void> {
     this.reviewMode = await PreferenceManager.getInstance().getReviewMode();
     this.selectedBook = await PreferenceManager.getInstance().getCurrentBook();
-    if (this.selectedBook === "Default Library") {
+
+    // 兼容旧数据：若当前书名为空或默认库，自动修正到第一本有数据的词书
+    if (!this.selectedBook || this.selectedBook === "Default Library") {
       const db = DatabaseManager.getInstance();
       const hasData = await db.checkBookExists("CET-4");
       if (hasData) {
         this.selectedBook = "CET-4";
         await PreferenceManager.getInstance().setCurrentBook("CET-4");
+      } else {
+        const fallback = await db.findAnyValidBook();
+        const fallbackHasData = await db.checkBookExists(fallback);
+        if (fallback && fallbackHasData) {
+          this.selectedBook = fallback;
+          await PreferenceManager.getInstance().setCurrentBook(fallback);
+        } else {
+          this.selectedBook = fallback || "Default Library";
+        }
       }
     }
+
     this.refreshStats();
   }
 
@@ -132,20 +144,24 @@ struct HomePage {
   async refreshStats(): Promise<void> {
     const db = DatabaseManager.getInstance();
     this.selectedBook = await PreferenceManager.getInstance().getCurrentBook();
-    // 自动修正书名
-    if (this.selectedBook === "Default Library" || this.selectedBook === "请选择词书") {
+    // 自动修正书名（兼容空字符串）
+    if (!this.selectedBook || this.selectedBook === "Default Library" || this.selectedBook === "请选择词书") {
       const valid = await db.findAnyValidBook();
-      if (valid !== "Default Library") {
+      const validHasData = await db.checkBookExists(valid);
+      if (valid && validHasData) {
         this.selectedBook = valid;
         await PreferenceManager.getInstance().setCurrentBook(valid);
+      } else {
+        this.selectedBook = valid || "Default Library";
       }
     }
 
+    // 先拿到用户设定的每日上限，避免使用旧值计算剩余额度
+    this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
     this.stats = await db.getDashboardStats(this.selectedBook);
-    this.todayRemaining = Math.max(0, this.dailyLimit - this.stats.learnedToday);
     this.chartData = await db.getProficiencyDistribution(this.selectedBook);
     this.heatmapData = await db.getActivityStats();
-    this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
+    this.todayRemaining = Math.max(0, this.dailyLimit - this.stats.learnedToday);
     this.focusWords = await db.getSpellingReviewWords(this.selectedBook, 3);
     this.generateDateList();
     this.updatePlanNote();
