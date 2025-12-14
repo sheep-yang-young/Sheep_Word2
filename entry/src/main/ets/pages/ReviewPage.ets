@@ -179,7 +179,7 @@ export struct ReviewPage {
     this.triggerHaptic(grade);
     const currentWord = this.words[this.currentIndex];
     const result = Sm2Algorithm.calculate(currentWord, grade);
-    if (currentWord.id !== undefined) { await DatabaseManager.getInstance().updateWordStats(currentWord.id, result.interval, result.repetition, result.easeFactor); await DatabaseManager.getInstance().logActivity(currentWord.bookId || 'Default Library'); }
+    if (currentWord.id !== undefined) { await DatabaseManager.getInstance().updateWordStats(currentWord.id, result.interval, result.repetition, result.easeFactor); await DatabaseManager.getInstance().logActivity(); }
 
     this.refreshFlag++;
 

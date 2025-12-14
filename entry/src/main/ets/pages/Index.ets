@@ -132,6 +132,7 @@ struct HomePage {
   async refreshStats(): Promise<void> {
     const db = DatabaseManager.getInstance();
     this.selectedBook = await PreferenceManager.getInstance().getCurrentBook();
+    // 自动修正书名
     if (this.selectedBook === "Default Library" || this.selectedBook === "请选择词书") {
       const valid = await db.findAnyValidBook();
       if (valid !== "Default Library") {
@@ -140,11 +141,11 @@ struct HomePage {
       }
     }
 
-    this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
     this.stats = await db.getDashboardStats(this.selectedBook);
     this.todayRemaining = Math.max(0, this.dailyLimit - this.stats.learnedToday);
     this.chartData = await db.getProficiencyDistribution(this.selectedBook);
-    this.heatmapData = await db.getActivityStats(this.selectedBook);
+    this.heatmapData = await db.getActivityStats();
+    this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
     this.focusWords = await db.getSpellingReviewWords(this.selectedBook, 3);
     this.generateDateList();
     this.updatePlanNote();
@@ -158,9 +159,9 @@ struct HomePage {
 
   updatePlanNote(): void {
     if (this.stats.total === 0) { this.planNote = '导入词书后即可开始计划'; return; }
-    if (this.stats.due > this.dailyLimit) { this.planNote = '复习任务较重，加油！'; }
-    else if (this.stats.learnedToday >= this.dailyLimit) { this.planNote = '今日目标已完成！'; }
-    else { this.planNote = '按计划学习即可达成目标'; }
+    if (this.stats.due > this.dailyLimit) { this.planNote = '今日复习量较多，先完成复习再解锁新词'; }
+    else if (this.stats.learnedToday >= this.dailyLimit) { this.planNote = '已完成今日目标，可以巩固难词或预习'; }
+    else { this.planNote = '按计划学习即可达成今日目标，加油！'; }
   }
 
   async toggleMode(mode: number): Promise<void> {
@@ -241,150 +242,6 @@ struct HomePage {
     }
   }
 
-  @Builder StepPill(title: string, desc: string, bg: string, color: string) {
-    Column({ space: 4 }) {
-      Text(title).fontSize(12).fontColor(color).fontWeight(FontWeight.Medium)
-      Text(desc).fontSize(12).fontColor('#1A1A1A')
-    }
-    .padding({ top: 12, bottom: 12, left: 14, right: 14 })
-    .backgroundColor(bg)
-    .borderRadius(16)
-  }
-
-  @Builder TagChip(text: string, value: string, color: string) {
-    Row({ space: 6 }) {
-      Text(text).fontSize(11).fontColor('#666')
-      Text(value).fontSize(12).fontWeight(FontWeight.Medium).fontColor(color)
-    }
-    .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-    .backgroundColor('rgba(10, 89, 247, 0.06)')
-    .borderRadius(16)
-  }
-
-  // [关键修复] 补全 TabBuilder 方法
-  @Builder TabBuilder(title: string, targetIndex: number, icon: Resource) {
-    Column() {
-      SymbolGlyph(icon)
-        .fontSize(24)
-        .fontColor(this.currentIndex === targetIndex ? ['#0A59F7'] : ['#999'])
-        .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, this.currentIndex === targetIndex ? 1 : 0))
-
-      Text(title).fontSize(10).fontColor(this.currentIndex === targetIndex ? '#0A59F7' : '#999').margin({ top: 4 })
-    }
-    .width('100%').height('100%').justifyContent(FlexAlign.Center)
-  }
-
-  @Builder PlanCard() {
-    CleanCard() {
-      Column({ space: 12 }) {
-        Row() {
-          Column({ space: 4 }) {
-            Text('Daily Goals').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
-            Text(this.planNote).fontSize(12).fontColor('#666')
-          }
-          .layoutWeight(1)
-        }
-
-        Row({ space: 8 }) {
-          this.StepPill('Review Due', `${this.stats.due}`, '#FFF7E6', '#FAAD14')
-          this.StepPill('New Words', `${this.todayRemaining} left`, '#E6F4FF', '#1677FF')
-          this.StepPill('Practice', 'Unlocked', '#F6FFED', '#52C41A')
-        }
-      }
-    }
-  }
-
-  @Builder OverviewCard() {
-    CleanCard() {
-      Column({ space: 12 }) {
-        Row() {
-          Column() {
-            Text('Library Stats').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
-            Text(this.selectedBook).fontSize(12).fontColor('#666')
-          }
-          .layoutWeight(1)
-
-          Row({ space: 6 }) {
-            this.TagChip('Mastered', `${this.stats.mastered}`, '#52C41A')
-            this.TagChip('Total', `${this.stats.total}`, '#1677FF')
-          }
-        }
-
-        Column({ space: 6 }) {
-          Row() { Text('Mastery Progress').fontSize(12).fontColor('#666') }
-          Row() {
-            Progress({
-              value: this.completionProgress,
-              total: 100,
-              type: ProgressType.Linear
-            })
-              .color('#0A59F7')
-              .width('100%')
-          }
-          .width('100%')
-          .backgroundColor('#F0F2F5')
-          .borderRadius(6)
-          .padding({ left: 4, right: 4 })
-
-          Row() {
-            Text(`${this.completionProgress}%`).fontSize(14).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
-            Blank().layoutWeight(1)
-            Text(`${this.stats.due} Due`).fontSize(12).fontColor('#666')
-          }
-        }
-      }
-    }
-  }
-
-  @Builder FocusCard() {
-    CleanCard() {
-      Column({ space: 12 }) {
-        Row() {
-          Column() {
-            Text('Review Focus').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
-            Text('Hardest words for you').fontSize(12).fontColor('#666')
-          }
-          .layoutWeight(1)
-          Button('View All').backgroundColor('#F5F7FA').fontColor('#0A59F7').height(34).onClick(() => {
-            this.pageStack.pushPath({ name: 'VocabularyPage' });
-          })
-        }
-
-        ForEach(this.focusWords, (item: Word) => {
-          Column() {
-            Row({ space: 8 }) {
-              Column({ space: 2 }) {
-                Text(item.spelling).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
-                Text(item.meaning).fontSize(12).fontColor('#666').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-              }
-              .layoutWeight(1)
-
-              this.TagChip('Proficiency', `${item.proficiency}%`, this.getProficiencyColor(item.proficiency))
-            }
-          }
-          .width('100%')
-          .padding({ top: 4, bottom: 4 })
-        }, (item: Word) => item.id?.toString() ?? item.spelling)
-      }
-    }
-  }
-
-  @Builder ModeToggleButton(label: string, mode: number, icon: Resource) {
-    Button() {
-      Row() {
-        Image(icon).width(18).height(18).fillColor(this.reviewMode === mode ? '#FFF' : '#999')
-        Text(label).fontSize(14).fontColor(this.reviewMode === mode ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
-      }
-    }
-    .type(ButtonType.Normal)
-    .padding({ top: 10, bottom: 10, left: 24, right: 24 })
-    .backgroundColor(this.reviewMode === mode ? '#0A59F7' : Color.Transparent)
-    .border({ width: 1, color: this.reviewMode === mode ? '#0A59F7' : '#E5E7EB' })
-    .borderRadius(20)
-    .animation({ duration: 300 })
-    .onClick(() => { this.toggleMode(mode) })
-  }
-
   build() {
     Tabs({ barPosition: BarPosition.End, index: this.currentIndex }) {
       // --- Tab 1: 学习 (Home) ---
@@ -400,22 +257,10 @@ struct HomePage {
               }.onClick(() => { this.handleSwitchBook() })
             }
             .layoutWeight(1)
+            // [核心修复] 强制靠左对齐，解决“跑到中间”的问题
             .alignItems(HorizontalAlign.Start)
 
-            if (this.stats.streak > 0) {
-              Row() {
-                SymbolGlyph($r('sys.symbol.clock_fill')).fontSize(14).fontColor(['#FF4D4F'])
-                Text(`${this.stats.streak} 天`).fontSize(12).fontColor('#FF4D4F').fontWeight(FontWeight.Bold).margin({ left: 4 })
-              }
-              .padding({ left: 8, right: 8, top: 4, bottom: 4 }).backgroundColor('#FFF0F0').borderRadius(12).margin({ right: 12 })
-            }
-
-            Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.list_bullet')).fontSize(22).fontColor(['#333']).fontWeight(FontWeight.Medium) }
-            .width(36).height(36).backgroundColor('#F0F2F5').margin({ right: 10 }).onClick(() => { this.pageStack.pushPath({ name: 'VocabularyPage' }) })
-
-            Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.moon')).fontSize(22).fontColor(['#5C2D91']).fontWeight(FontWeight.Medium).symbolEffect(new AppearSymbolEffect(EffectScope.WHOLE)) }
-            .width(36).height(36).backgroundColor('#F3E5F5').margin({ right: 10 }).onClick(() => { this.pageStack.pushPath({ name: 'ZenPage' }) })
-
+            // Settings Button
             Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.gearshape')).fontSize(22).fontColor(['#333']).fontWeight(FontWeight.Medium) }
             .width(36).height(36).backgroundColor('#F0F2F5').onClick(() => { this.pageStack.pushPath({ name: 'SettingsPage' }) })
           }
@@ -423,7 +268,7 @@ struct HomePage {
 
           Scroll() {
             Column({ space: 20 }) {
-              // 仪表盘
+              // --- 仪表盘 ---
               Stack({ alignContent: Alignment.Center }) {
                 Circle({ width: 220, height: 220 }).strokeWidth(20).fill(Color.Transparent).stroke('#F0F2F5')
                 Circle({ width: 220, height: 220 })
@@ -449,7 +294,7 @@ struct HomePage {
               .height(260)
               .margin({ top: 20 })
 
-              // 统计数据
+              // --- 数据行 ---
               Row() {
                 this.StatItem(this.stats.total.toString(), 'Total')
                 Divider().vertical(true).height(30).color('#EEE')
@@ -461,22 +306,39 @@ struct HomePage {
               .padding(20).backgroundColor(Color.White).borderRadius(16)
               .shadow({ radius: 10, color: 'rgba(0,0,0,0.05)' })
 
-              this.PlanCard()
-              this.OverviewCard()
-              if (this.focusWords.length > 0) { this.FocusCard() }
             }
             .width('100%')
           }
           .layoutWeight(1).scrollBar(BarState.Off)
 
-          // 模式切换
-          Row() {
-            this.ModeToggleButton('Card', 0, $r('sys.media.ohos_ic_public_paste')).margin({ right: 16 })
-            this.ModeToggleButton('Spelling', 1, $r('sys.media.ohos_ic_public_edit'))
+          // --- 模式切换 (白色背景 + 边框，无灰色块) ---
+          Row({ space: 16 }) {
+            Row() {
+              Image($r('sys.media.ohos_ic_public_paste')).width(18).height(18).fillColor(this.reviewMode === 0 ? '#FFF' : '#999')
+              Text('Card').fontSize(14).fontColor(this.reviewMode === 0 ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
+            }
+            .padding({ top: 10, bottom: 10, left: 24, right: 24 })
+            .backgroundColor(this.reviewMode === 0 ? '#0A59F7' : '#FFFFFF')
+            .border({ width: 1, color: this.reviewMode === 0 ? '#0A59F7' : '#E5E7EB' })
+            .borderRadius(20)
+            .animation({ duration: 300 })
+            .onClick(() => { this.toggleMode(0) })
+
+            Row() {
+              Image($r('sys.media.ohos_ic_public_edit')).width(18).height(18).fillColor(this.reviewMode === 1 ? '#FFF' : '#999')
+              Text('Spelling').fontSize(14).fontColor(this.reviewMode === 1 ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
+            }
+            .padding({ top: 10, bottom: 10, left: 24, right: 24 })
+            .backgroundColor(this.reviewMode === 1 ? '#0A59F7' : '#FFFFFF')
+            .border({ width: 1, color: this.reviewMode === 1 ? '#0A59F7' : '#E5E7EB' })
+            .borderRadius(20)
+            .animation({ duration: 300 })
+            .onClick(() => { this.toggleMode(1) })
           }
           .justifyContent(FlexAlign.Center)
           .margin({ bottom: 10 })
 
+          // --- 开始按钮 (自适应宽度，无Slider) ---
           Button(this.stats.due > 0 ? 'Start Review Session' : 'All Done for Today!')
             .height(56)
             .padding({ left: 40, right: 40 })
@@ -502,6 +364,7 @@ struct HomePage {
           Text('Learning Analytics').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#1A1A1A').width('100%').padding({ top: 60, left: 24, bottom: 20 })
           Scroll() {
             Column({ space: 20 }) {
+              // 1. 热力图
               Column() {
                 Text('Study Consistency (Last 28 Days)').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333').width('100%').margin({ bottom: 15 })
                 Grid() {
@@ -509,6 +372,7 @@ struct HomePage {
                 }.columnsTemplate('1fr 1fr 1fr 1fr 1fr 1fr 1fr').rowsGap(6).columnsGap(6).height(130)
               }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(16).shadow({ radius: 10, color: 'rgba(0,0,0,0.05)' })
 
+              // 2. 熟练度
               Column() {
                 Text('Proficiency Distribution').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333').width('100%').margin({ bottom: 20 })
                 SimpleLineChart({ data: this.chartData })
@@ -521,5 +385,17 @@ struct HomePage {
       .tabBar(this.TabBuilder('Analytics', 2, $r('sys.symbol.calendar_fill')))
     }
     .scrollable(false).barHeight(60).onChange((index) => { this.currentIndex = index; this.refreshStats(); })
+  }
+
+  @Builder TabBuilder(title: string, targetIndex: number, icon: Resource) {
+    Column() {
+      SymbolGlyph(icon)
+        .fontSize(24)
+        .fontColor(this.currentIndex === targetIndex ? ['#0A59F7'] : ['#999'])
+        .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, this.currentIndex === targetIndex ? 1 : 0))
+
+      Text(title).fontSize(10).fontColor(this.currentIndex === targetIndex ? '#0A59F7' : '#999').margin({ top: 4 })
+    }
+    .width('100%').height('100%').justifyContent(FlexAlign.Center)
   }
 }
