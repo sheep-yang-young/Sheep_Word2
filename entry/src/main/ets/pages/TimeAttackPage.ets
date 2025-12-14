@@ -120,14 +120,15 @@ export struct TimeAttackPage {
   }
 
   answer(opt: string) {
-    if (this.isGameOver) return;
+    if (this.isGameOver || this.words.length === 0 || this.currentIndex >= this.words.length) return;
     const correct = this.words[this.currentIndex].meaning;
     if (opt === correct) { this.score++; }
-    if (this.currentIndex >= this.words.length - 1) {
+    this.currentIndex++;
+
+    if (this.currentIndex >= this.words.length) {
       this.isGameOver = true;
       this.stopTimer();
     } else {
-      this.currentIndex++;
       this.buildOptionsForCurrent();
     }
     this.persistSession();
@@ -152,7 +153,7 @@ export struct TimeAttackPage {
           Text(`${this.timeLeft}s`).fontSize(20).fontColor('#FF4D4F').fontWeight(FontWeight.Bold)
         }.width('100%').padding({ top: 56, left: 16, right: 16, bottom: 10 }).alignItems(VerticalAlign.Center)
 
-        if (!this.isGameOver && this.words.length > 0) {
+        if (!this.isGameOver && this.words.length > 0 && this.currentIndex < this.words.length) {
           Column({ space: 20 }) {
             Text(`当前得分: ${this.score}`).fontSize(16).fontColor('#0A59F7')
             CleanCard() {
