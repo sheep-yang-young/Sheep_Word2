@@ -140,11 +140,11 @@ struct HomePage {
       }
     }
 
+    this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
     this.stats = await db.getDashboardStats(this.selectedBook);
     this.todayRemaining = Math.max(0, this.dailyLimit - this.stats.learnedToday);
     this.chartData = await db.getProficiencyDistribution(this.selectedBook);
-    this.heatmapData = await db.getActivityStats();
-    this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
+    this.heatmapData = await db.getActivityStats(this.selectedBook);
     this.focusWords = await db.getSpellingReviewWords(this.selectedBook, 3);
     this.generateDateList();
     this.updatePlanNote();
