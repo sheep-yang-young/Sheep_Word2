@@ -132,7 +132,7 @@ export struct SettingsPage {
               this.SettingsItem('导入 TXT 文件', $r('sys.media.ohos_ic_public_paste'), () => { this.handleImportTxt() })
               this.SettingsItem('导出数据备份', $r('sys.media.ohos_ic_public_share'), () => { this.handleExport() })
               this.SettingsItem('重置当前进度', $r('sys.media.ohos_ic_public_clock'), () => { this.handleResetProgress() }, '#FAAD14')
-              this.SettingsItem('修复数据库', $r('sys.media.ohos_ic_public_refresh'), () => { this.handleRebuildDatabase() }, '#0A59F7')
+                this.SettingsItem('修复数据库', $r('sys.media.ohos_ic_public_more'), () => { this.handleRebuildDatabase() }, '#0A59F7')
               this.SettingsItem('清空所有数据', $r('sys.media.ohos_ic_public_remove'), () => { this.handleClean() }, '#FF4D4F')
             }
           }

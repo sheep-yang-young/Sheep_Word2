@@ -2,6 +2,16 @@ import { relationalStore, ValuesBucket } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { Word, DashboardStats } from '../model/WordModel';
 
+interface ColumnDefinition {
+  name: string;
+  type: string;
+}
+
+interface ActivityRecord {
+  dateStr: string;
+  count: number;
+}
+
 const DB_NAME = 'Lumina_V2.db';
 
 export class DatabaseManager {
@@ -39,7 +49,7 @@ export class DatabaseManager {
     `);
 
     // 兼容旧版本：确保新增字段存在
-    const optionalColumns: { name: string, type: string }[] = [
+    const optionalColumns: ColumnDefinition[] = [
       { name: 'book_id', type: 'TEXT' },
       { name: 'note', type: 'TEXT' },
       { name: 'roots', type: 'TEXT' },
@@ -207,7 +217,7 @@ export class DatabaseManager {
     if (!store) return false;
 
     let wordsBackup: Word[] = [];
-    const activityBackup: { dateStr: string, count: number }[] = [];
+    const activityBackup: ActivityRecord[] = [];
 
     try {
       // 备份单词表
@@ -278,6 +288,6 @@ export class DatabaseManager {
   async recordKnowledgePractice(id: number, correct: boolean): Promise<void> { const s=this.rdbStore; if(!s)return; try{const res=await s.querySql('SELECT knowledgeScore, proficiency FROM words WHERE id=?',[id]); let score=0; let prof=0; if(res.goToFirstRow()){score=res.getLong(0)||0; prof=res.getLong(1)||0;} res.close(); const now=Date.now(); const delta=correct?5: -2; const newScore=Math.max(0, score + delta); const newProf=Math.min(100, Math.max(0, prof + (correct?3:0))); const v:ValuesBucket={knowledgeScore:newScore, proficiency:newProf, lastReviewTime:now, nextReviewTime:now + 24*60*60*1000}; const p=new relationalStore.RdbPredicates('words'); p.equalTo('id',id); await s.update(v,p); await this.logActivity(); }catch(e){} }
 
   private serializeArray(arr?: string[]): string { if (!arr || arr.length === 0) return '[]'; try { return JSON.stringify(arr); } catch (e) { return '[]'; } }
-  private parseArray(raw: string | null): string[] { if (!raw) return []; try { const parsed: object = JSON.parse(raw) as object; if (!Array.isArray(parsed)) return []; return (parsed as object[]).map((item) => String(item)); } catch (e) { return []; } }
-  private mapRowToWord(r: relationalStore.ResultSet): Word { const g=(c:string)=>{const i=r.getColumnIndex(c);return i>=0?r.getString(i):''}; const l=(c:string)=>{const i=r.getColumnIndex(c);return i>=0?r.getLong(i):0;}; const d=(c:string)=>{const i=r.getColumnIndex(c);return i>=0?r.getDouble(i):0;}; return { id:l('id'), bookId:g('book_id'), spelling:g('spelling'), phonetic:g('phonetic'), meaning:g('meaning'), example:g('example'), note:g('note'), roots:this.parseArray(g('roots')), affixes:this.parseArray(g('affixes')), collocations:this.parseArray(g('collocations')), synonyms:this.parseArray(g('synonyms')), antonyms:this.parseArray(g('antonyms')), derivatives:this.parseArray(g('derivatives')), senses:this.parseArray(g('senses')), knowledgeScore:l('knowledgeScore'), proficiency:l('proficiency'), repetition:l('repetition'), interval:l('interval'), easeFactor:d('easeFactor'), lastReviewTime:l('lastReviewTime'), nextReviewTime:l('nextReviewTime') }; }
+  private parseArray(raw: string | null): string[] { if (!raw) return []; try { const parsed: unknown = JSON.parse(raw); if (!Array.isArray(parsed)) return []; return (parsed as unknown[]).map((item) => String(item)); } catch (e) { return []; } }
+  private mapRowToWord(r: relationalStore.ResultSet): Word { const g=(c:string)=>{const i=r.getColumnIndex(c);return i>=0?r.getString(i):''}; const l=(c:string)=>{const i=r.getColumnIndex(c);return i>=0?r.getLong(i):0;}; const d=(c:string)=>{const i=r.getColumnIndex(c);return i>=0?r.getDouble(i):0;}; const word: Word={ id:l('id'), bookId:g('book_id'), spelling:g('spelling'), phonetic:g('phonetic'), meaning:g('meaning'), example:g('example'), note:g('note'), roots:this.parseArray(g('roots')), affixes:this.parseArray(g('affixes')), collocations:this.parseArray(g('collocations')), synonyms:this.parseArray(g('synonyms')), antonyms:this.parseArray(g('antonyms')), derivatives:this.parseArray(g('derivatives')), senses:this.parseArray(g('senses')), knowledgeScore:l('knowledgeScore'), proficiency:l('proficiency'), repetition:l('repetition'), interval:l('interval'), easeFactor:d('easeFactor'), lastReviewTime:l('lastReviewTime'), nextReviewTime:l('nextReviewTime') }; return word; }
 }
