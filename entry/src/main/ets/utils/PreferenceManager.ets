@@ -9,6 +9,7 @@ const KEY_REVIEW_MODE = 'review_mode';
 const KEY_TTS_SPEED = 'tts_speed';
 const KEY_CURRENT_BOOK = 'current_book';
 const KEY_FIRST_LAUNCH = 'first_launch_v2'; // 升级key以确保老用户也能看到新引导
+const KEY_TIME_ATTACK_STATE = 'time_attack_state';
 
 export class PreferenceManager {
   private static instance: PreferenceManager;
@@ -58,4 +59,21 @@ export class PreferenceManager {
   async setTtsSpeed(speed: number): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_TTS_SPEED, speed); await this.pref.flush(); }
   async getCurrentBook(): Promise<string> { if (!this.pref) return "Default Library"; return (await this.pref.get(KEY_CURRENT_BOOK, "Default Library")) as string; }
   async setCurrentBook(name: string): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_CURRENT_BOOK, name); await this.pref.flush(); }
+
+  async getTimeAttackState<T>(): Promise<T | null> {
+    if (!this.pref) return null;
+    const raw = (await this.pref.get(KEY_TIME_ATTACK_STATE, "")) as string;
+    if (!raw) return null;
+    try { return JSON.parse(raw) as T; } catch (e) { return null; }
+  }
+
+  async setTimeAttackState(value: object): Promise<void> {
+    if (!this.pref) return;
+    try {
+      await this.pref.put(KEY_TIME_ATTACK_STATE, JSON.stringify(value));
+      await this.pref.flush();
+    } catch (e) { console.error('[Lumina] Failed to persist time attack state', e); }
+  }
+
+  async clearTimeAttackState(): Promise<void> { if (!this.pref) return; await this.pref.delete(KEY_TIME_ATTACK_STATE); await this.pref.flush(); }
 }
