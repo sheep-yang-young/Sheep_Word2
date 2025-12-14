@@ -1,11 +1,12 @@
 import { fileIo as fs, picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { DatabaseManager } from './DatabaseManager';
+import { Word } from '../model/WordModel';
 
 export class WordExporter {
   static async exportData(context: common.UIAbilityContext, bookId: string): Promise<boolean> {
     try {
-      const allWords = await DatabaseManager.getInstance().searchWords(bookId, '');
+      const allWords: Word[] = await DatabaseManager.getInstance().searchWords(bookId, '');
       if (allWords.length === 0) return false;
       const jsonStr = JSON.stringify(allWords, null, 2);
       const opt = new picker.DocumentSaveOptions();

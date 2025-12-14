@@ -52,9 +52,10 @@ export class WordImporter {
 
       // 尝试作为 JSON 解析
       try {
-        const parsed: unknown = JSON.parse(content);
+        const parsed: object = JSON.parse(content) as object;
         if (Array.isArray(parsed)) {
-          const rawData: RawImportItem[] = parsed.filter((item): item is RawImportItem => typeof item === 'object' && item !== null);
+          const array = parsed as object[];
+          const rawData: RawImportItem[] = array.filter((item: object): boolean => typeof item === 'object' && item !== null) as RawImportItem[];
           return await WordImporter.processJsonData(rawData, bookId);
         }
       } catch (error) {
@@ -127,12 +128,13 @@ export class WordImporter {
   private static async parseAndSaveJson(uri: string, bookId: string): Promise<number> {
     try {
       const content = await WordImporter.readFileContent(uri);
-      const parsed: unknown = JSON.parse(content);
+      const parsed: object = JSON.parse(content) as object;
       if (!Array.isArray(parsed)) {
         return -1;
       }
 
-      const rawData: RawImportItem[] = parsed.filter((item): item is RawImportItem => typeof item === 'object' && item !== null);
+      const array = parsed as object[];
+      const rawData: RawImportItem[] = array.filter((item: object): boolean => typeof item === 'object' && item !== null) as RawImportItem[];
       return await WordImporter.processJsonData(rawData, bookId);
     } catch (error) {
       return -1;

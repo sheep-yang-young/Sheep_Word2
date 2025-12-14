@@ -6,12 +6,12 @@
         "type": "HarmonyOS",
         "material": {
           "storeFile": "C:/Users/Sheep_Young/LuminaWord.p12",
-          "storePassword": "0000001BA4E10AA95954726CD305028ADB63438DC1D67677343DCDB327B9707D9D593830E5CE530FCCCC55",
+          "storePassword": "0000001BC94886FB9AB1C27084C49C3E6D1AB25BC27D66FBADBE57080F54A0314719B10AADF3A4AA68B5B4",
           "keyAlias": "LuminaWord",
-          "keyPassword": "0000001B8C4E9B95BEE620440C5EB7BD1B91EF6E8D4172F1363DB6A9BA7171501E93A854AE9421A45544BC",
+          "keyPassword": "0000001BE301B96B832D46D29B1A9FD665F572AB2B11DB3B22DD673293D92BEA18920767F6968F485F1C8B",
           "signAlg": "SHA256withECDSA",
-          "profile": "C:/Users/Sheep_Young/Desktop/LuminaWordRelease.p7b",
-          "certpath": "C:/Users/Sheep_Young/Desktop/LuminaWord.cer"
+          "profile": "C:/Users/Sheep_Young/Desktop/文件/签名证书/LuminaWordRelease.p7b",
+          "certpath": "C:/Users/Sheep_Young/Desktop/文件/签名证书/LuminaWord.cer"
         }
       }
     ],

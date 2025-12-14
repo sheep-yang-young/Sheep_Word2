@@ -236,14 +236,14 @@ export struct ReviewPage {
                   }.width('100%').height('65%')
                 }
                 // --- 背面 ---
-                    else {
-                      Column() {
-                        Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(32).height(32).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 20 })
-                        Divider().color('#EEE').width('40%').margin({ top: 20, bottom: 20 })
-                        Scroll() { Column({ space: 10 }) { Text(this.words[this.currentIndex].meaning).fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center); if (this.words[this.currentIndex].example) Text(this.words[this.currentIndex].example).fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic).textAlign(TextAlign.Center).margin({ top: 10 }); if ((this.words[this.currentIndex].roots && this.words[this.currentIndex].roots!.length > 0) || (this.words[this.currentIndex].affixes && this.words[this.currentIndex].affixes!.length > 0)) this.KnowledgeChips('词根词缀卡', [...(this.words[this.currentIndex].roots || []), ...(this.words[this.currentIndex].affixes || [])], '#EEF2FF'); if (this.words[this.currentIndex].collocations && this.words[this.currentIndex].collocations!.length > 0) this.CollocationPractice(this.words[this.currentIndex].collocations!); if (this.words[this.currentIndex].derivatives && this.words[this.currentIndex].derivatives!.length > 0) this.KnowledgeChips('词族树', this.words[this.currentIndex].derivatives, '#F0FDF4'); if (this.words[this.currentIndex].synonyms && this.words[this.currentIndex].synonyms!.length > 0) this.KnowledgeChips('同义/反义', [...(this.words[this.currentIndex].synonyms || []), ...(this.words[this.currentIndex].antonyms || [])], '#F8FAFC'); if (this.words[this.currentIndex].senses && this.words[this.currentIndex].senses!.length > 0) this.KnowledgeChips('多义解读', this.words[this.currentIndex].senses, '#FFF7ED'); if (this.currentNote) Column() { Text('NOTE').fontSize(10).fontColor('#0A59F7').fontWeight(FontWeight.Bold); Text(this.currentNote).fontSize(14).fontColor('#666').margin({ top: 4 }) }.width('100%').padding(12).backgroundColor('#F0F9FF').borderRadius(8).alignItems(HorizontalAlign.Start).margin({ top: 20 }).onClick(() => { this.noteController.open() }) }.padding({ left: 20, right: 20 }) }.layoutWeight(1).scrollBar(BarState.Auto)
-                      }
-                      .width('100%').height('65%')
-                      // [核心修复] 正确的旋转参数：绕Y轴旋转180度
+                else {
+                  Column() {
+                    Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(32).height(32).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 20 })
+                    Divider().color('#EEE').width('40%').margin({ top: 20, bottom: 20 })
+                    Scroll() { Column({ space: 10 }) { Text(this.words[this.currentIndex].meaning).fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center); if (this.words[this.currentIndex].example) Text(this.words[this.currentIndex].example).fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic).textAlign(TextAlign.Center).margin({ top: 10 }); if ((this.words[this.currentIndex].roots && this.words[this.currentIndex].roots!.length > 0) || (this.words[this.currentIndex].affixes && this.words[this.currentIndex].affixes!.length > 0)) this.KnowledgeChips('词根词缀卡', [...(this.words[this.currentIndex].roots || []), ...(this.words[this.currentIndex].affixes || [])], '#EEF2FF'); if (this.words[this.currentIndex].collocations && this.words[this.currentIndex].collocations!.length > 0) this.CollocationPractice(this.words[this.currentIndex].collocations!); if (this.words[this.currentIndex].derivatives && this.words[this.currentIndex].derivatives!.length > 0) this.KnowledgeChips('词族树', this.words[this.currentIndex].derivatives, '#F0FDF4'); if (this.words[this.currentIndex].synonyms && this.words[this.currentIndex].synonyms!.length > 0) this.KnowledgeChips('同义/反义', [...(this.words[this.currentIndex].synonyms || []), ...(this.words[this.currentIndex].antonyms || [])], '#F8FAFC'); if (this.words[this.currentIndex].senses && this.words[this.currentIndex].senses!.length > 0) this.KnowledgeChips('多义解读', this.words[this.currentIndex].senses, '#FFF7ED'); if (this.currentNote) Column() { Text('NOTE').fontSize(10).fontColor('#0A59F7').fontWeight(FontWeight.Bold); Text(this.currentNote).fontSize(14).fontColor('#666').margin({ top: 4 }) }.width('100%').padding(12).backgroundColor('#F0F9FF').borderRadius(8).alignItems(HorizontalAlign.Start).margin({ top: 20 }).onClick(() => { this.noteController.open() }) }.padding({ left: 20, right: 20 }) }.layoutWeight(1).scrollBar(BarState.Auto)
+                  }
+                  .width('100%').height('65%')
+                  // [核心修复] 正确的旋转参数：绕Y轴旋转180度
                   .rotate({ x: 0, y: 1, z: 0, angle: 180 })
                 }
               }
@@ -266,26 +266,27 @@ export struct ReviewPage {
     }
   }
   @Builder KnowledgeChips(title: string, items?: string[], bgColor: string = '#F5F7FA') {
-    if (!items || items.length === 0) return;
-    Column({ space: 8 }) {
-      Text(title).fontSize(12).fontColor('#0F172A').fontWeight(FontWeight.Medium)
-      Flex({ wrap: FlexWrap.Wrap }) {
-        ForEach(items, (item: string, index?: number) => {
-          Text(item)
-            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-            .margin({ right: 8, bottom: 8 })
-            .backgroundColor(bgColor)
-            .borderRadius(10)
-            .fontColor('#111827')
-            .fontSize(12)
-        }, (item: string, index?: number) => `${item}-${index}`)
+    if (items && items.length > 0) {
+      Column({ space: 8 }) {
+        Text(title).fontSize(12).fontColor('#0F172A').fontWeight(FontWeight.Medium)
+        Flex({ wrap: FlexWrap.Wrap }) {
+          ForEach(items, (item: string, index?: number) => {
+            Text(item)
+              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+              .margin({ right: 8, bottom: 8 })
+              .backgroundColor(bgColor)
+              .borderRadius(10)
+              .fontColor('#111827')
+              .fontSize(12)
+          }, (item: string, index?: number) => `${item}-${index}`)
+        }
+        .width('100%')
       }
-      .width('100%')
+      .padding(12)
+      .backgroundColor(Color.White)
+      .borderRadius(12)
+      .border({ width: 1, color: '#EEF2F7' })
     }
-    .padding(12)
-    .backgroundColor(Color.White)
-    .borderRadius(12)
-    .border({ width: 1, color: '#EEF2F7' })
   }
   @Builder CollocationPractice(list: string[]) {
     Column({ space: 8 }) {
