@@ -10,6 +10,7 @@ interface TimeAttackState {
   timeLeft: number;
   score: number;
   isGameOver: boolean;
+  isWordPoolExhausted: boolean;
 }
 
 @Component
@@ -21,6 +22,7 @@ export struct TimeAttackPage {
   @State score: number = 0;
   @State timeLeft: number = 60;
   @State isGameOver: boolean = false;
+  @State isWordPoolExhausted: boolean = false;
 
   private currentBookId: string = "Default Library";
   private timerId: number = -1;
@@ -35,7 +37,7 @@ export struct TimeAttackPage {
       this.buildOptionsForCurrent();
     }
 
-    if (!this.isGameOver && this.words.length > 0) {
+    if (!this.isGameOver && !this.isWordPoolExhausted && this.words.length > 0) {
       this.startTimer();
     }
   }
@@ -46,6 +48,7 @@ export struct TimeAttackPage {
   }
 
   startTimer() {
+    if (this.timeLeft <= 0 || this.isGameOver || this.isWordPoolExhausted) return;
     this.stopTimer();
     this.timerId = setInterval(() => {
       this.timeLeft = Math.max(0, this.timeLeft - 1);
@@ -77,6 +80,8 @@ export struct TimeAttackPage {
   }
 
   async startNewSession() {
+    this.isWordPoolExhausted = false;
+    this.isGameOver = false;
     const db = DatabaseManager.getInstance();
     const dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
     const stats = await db.getDashboardStats(this.currentBookId, dailyLimit);
@@ -88,7 +93,6 @@ export struct TimeAttackPage {
     this.currentIndex = 0;
     this.score = 0;
     this.timeLeft = 60;
-    this.isGameOver = false;
     this.buildOptionsForCurrent();
     await this.persistSession();
   }
@@ -101,6 +105,7 @@ export struct TimeAttackPage {
       this.timeLeft = saved.timeLeft ?? 60;
       this.score = saved.score ?? 0;
       this.isGameOver = saved.isGameOver ?? false;
+      this.isWordPoolExhausted = saved.isWordPoolExhausted ?? false;
       return true;
     }
     await PreferenceManager.getInstance().clearTimeAttackState();
@@ -115,7 +120,8 @@ export struct TimeAttackPage {
       currentIndex: this.currentIndex,
       timeLeft: this.timeLeft,
       score: this.score,
-      isGameOver: this.isGameOver
+      isGameOver: this.isGameOver,
+      isWordPoolExhausted: this.isWordPoolExhausted
     };
     await PreferenceManager.getInstance().setTimeAttackState(state);
   }
@@ -127,12 +133,32 @@ export struct TimeAttackPage {
     this.currentIndex++;
 
     if (this.currentIndex >= this.words.length) {
-      this.isGameOver = true;
+      this.isWordPoolExhausted = true;
       this.stopTimer();
     } else {
       this.buildOptionsForCurrent();
     }
     this.persistSession();
+  }
+
+  async continuePractice() {
+    if (this.timeLeft <= 0) return;
+    const db = DatabaseManager.getInstance();
+    const dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
+    const stats = await db.getDashboardStats(this.currentBookId, dailyLimit);
+    const pendingToday = (stats.dueReviews || 0) + (stats.newToday || 0);
+    const dueCap = Math.min(pendingToday || 0, dailyLimit || 0);
+    const limit = dueCap > 0 ? Math.min(50, dueCap) : 50;
+
+    this.words = await db.getRandomWords(this.currentBookId, limit);
+    this.currentIndex = 0;
+    this.isWordPoolExhausted = false;
+    this.isGameOver = false;
+    this.buildOptionsForCurrent();
+    if (this.words.length > 0) {
+      this.startTimer();
+    }
+    await this.persistSession();
   }
 
   async restartGame() {
@@ -154,7 +180,7 @@ export struct TimeAttackPage {
           Text(`${this.timeLeft}s`).fontSize(20).fontColor('#FF4D4F').fontWeight(FontWeight.Bold)
         }.width('100%').padding({ top: 56, left: 16, right: 16, bottom: 10 }).alignItems(VerticalAlign.Center)
 
-        if (!this.isGameOver && this.words.length > 0 && this.currentIndex < this.words.length) {
+        if (!this.isGameOver && !this.isWordPoolExhausted && this.words.length > 0 && this.currentIndex < this.words.length) {
           Column({ space: 20 }) {
             Text(`当前得分: ${this.score}`).fontSize(16).fontColor('#0A59F7')
             CleanCard() {
@@ -173,6 +199,16 @@ export struct TimeAttackPage {
             Row({ space: 12 }) {
               Button('返回').onClick(() => this.pageStack.pop())
               Button('重新开始').type(ButtonType.Normal).onClick(() => this.restartGame())
+            }
+          }.justifyContent(FlexAlign.Center).height('80%')
+        } else if (this.isWordPoolExhausted) {
+          Column({ space: 20 }) {
+            Text('已完成题目').fontSize(30).fontWeight(FontWeight.Bold)
+            Text(`当前得分: ${this.score}`).fontSize(24).fontColor('#0A59F7')
+            Row({ space: 12 }) {
+              Button('继续加练').type(ButtonType.Normal).onClick(() => this.continuePractice())
+              Button('重新开始').type(ButtonType.Normal).onClick(() => this.restartGame())
+              Button('返回').onClick(() => this.pageStack.pop())
             }
           }.justifyContent(FlexAlign.Center).height('80%')
         } else {
