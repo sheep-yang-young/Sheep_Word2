@@ -23,18 +23,13 @@ export struct TimeAttackPage {
   startTimer() {
     let interval = setInterval(() => {
       this.timeLeft--;
-      if (this.timeLeft <= 0) {
-        clearInterval(interval);
-        this.isGameOver = true;
-      }
+      if (this.timeLeft <= 0) { clearInterval(interval); this.isGameOver = true; }
     }, 1000);
   }
 
   nextQuestion() {
     if (this.currentIndex >= this.words.length - 1) return;
-
     const correct = this.words[this.currentIndex].meaning;
-    // 随机生成混淆项
     let opts = [correct];
     while (opts.length < 4) {
       const rand = this.words[Math.floor(Math.random() * this.words.length)].meaning;
@@ -46,9 +41,7 @@ export struct TimeAttackPage {
   answer(opt: string) {
     if (this.isGameOver) return;
     const correct = this.words[this.currentIndex].meaning;
-    if (opt === correct) {
-      this.score++;
-    }
+    if (opt === correct) { this.score++; }
     this.currentIndex++;
     this.nextQuestion();
   }
@@ -57,27 +50,21 @@ export struct TimeAttackPage {
     NavDestination() {
       Column() {
         Row() {
-          Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(20) }
-          .backgroundColor('#F5F5F5').onClick(() => this.pageStack.pop())
-          Text('60秒冲刺').fontSize(20).fontWeight(FontWeight.Bold).margin({ left: 12 })
+          Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([Color.Black]) }
+          .backgroundColor(Color.Transparent).width(48).height(48).onClick(() => this.pageStack.pop())
+          Text('60秒冲刺').fontSize(20).fontWeight(FontWeight.Bold).margin({ left: 4 })
           Blank()
           Text(`${this.timeLeft}s`).fontSize(20).fontColor('#FF4D4F').fontWeight(FontWeight.Bold)
-        }.width('100%').padding(20)
+        }.width('100%').padding({ top: 56, left: 16, right: 16, bottom: 10 }).alignItems(VerticalAlign.Center)
 
         if (!this.isGameOver && this.words.length > 0) {
           Column({ space: 20 }) {
             Text(`当前得分: ${this.score}`).fontSize(16).fontColor('#0A59F7')
-
             CleanCard() {
               Column() {
-                Text(this.words[this.currentIndex].spelling)
-                  .fontSize(30).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center).margin({ bottom: 20 })
-
+                Text(this.words[this.currentIndex].spelling).fontSize(30).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center).margin({ bottom: 20 })
                 ForEach(this.options, (opt: string) => {
-                  Button(opt)
-                    .width('100%').backgroundColor('#F5F7FA').fontColor('#333')
-                    .margin({ bottom: 10 }).height(50)
-                    .onClick(() => this.answer(opt))
+                  Button(opt).width('100%').backgroundColor('#F5F7FA').fontColor('#333').margin({ bottom: 10 }).height(50).onClick(() => this.answer(opt))
                 })
               }.padding(20)
             }
@@ -91,9 +78,7 @@ export struct TimeAttackPage {
         } else {
           Text('加载中...').margin(50)
         }
-      }
-      .height('100%').backgroundColor('#F5F7FA')
-    }
-    .hideTitleBar(true)
+      }.height('100%').backgroundColor('#F5F7FA')
+    }.hideTitleBar(true)
   }
 }
