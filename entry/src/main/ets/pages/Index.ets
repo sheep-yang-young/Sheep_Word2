@@ -369,6 +369,22 @@ struct HomePage {
     }
   }
 
+  @Builder ModeToggleButton(label: string, mode: number, icon: Resource) {
+    Button() {
+      Row() {
+        Image(icon).width(18).height(18).fillColor(this.reviewMode === mode ? '#FFF' : '#999')
+        Text(label).fontSize(14).fontColor(this.reviewMode === mode ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
+      }
+    }
+    .type(ButtonType.Normal)
+    .padding({ top: 10, bottom: 10, left: 24, right: 24 })
+    .backgroundColor(this.reviewMode === mode ? '#0A59F7' : Color.Transparent)
+    .border({ width: 1, color: this.reviewMode === mode ? '#0A59F7' : '#E5E7EB' })
+    .borderRadius(20)
+    .animation({ duration: 300 })
+    .onClick(() => { this.toggleMode(mode) })
+  }
+
   build() {
     Tabs({ barPosition: BarPosition.End, index: this.currentIndex }) {
       // --- Tab 1: 学习 (Home) ---
@@ -454,28 +470,9 @@ struct HomePage {
           .layoutWeight(1).scrollBar(BarState.Off)
 
           // 模式切换
-          Row({ space: 16 }) {
-            Row() {
-              Image($r('sys.media.ohos_ic_public_paste')).width(18).height(18).fillColor(this.reviewMode === 0 ? '#FFF' : '#999')
-              Text('Card').fontSize(14).fontColor(this.reviewMode === 0 ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
-            }
-            .padding({ top: 10, bottom: 10, left: 24, right: 24 })
-            .backgroundColor(this.reviewMode === 0 ? '#0A59F7' : Color.Transparent)
-            .border({ width: 1, color: this.reviewMode === 0 ? '#0A59F7' : '#E5E7EB' })
-            .borderRadius(20)
-            .animation({ duration: 300 })
-            .onClick(() => { this.toggleMode(0) })
-
-            Row() {
-              Image($r('sys.media.ohos_ic_public_edit')).width(18).height(18).fillColor(this.reviewMode === 1 ? '#FFF' : '#999')
-              Text('Spelling').fontSize(14).fontColor(this.reviewMode === 1 ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
-            }
-            .padding({ top: 10, bottom: 10, left: 24, right: 24 })
-            .backgroundColor(this.reviewMode === 1 ? '#0A59F7' : Color.Transparent)
-            .border({ width: 1, color: this.reviewMode === 1 ? '#0A59F7' : '#E5E7EB' })
-            .borderRadius(20)
-            .animation({ duration: 300 })
-            .onClick(() => { this.toggleMode(1) })
+          Row() {
+            this.ModeToggleButton('Card', 0, $r('sys.media.ohos_ic_public_paste')).margin({ right: 16 })
+            this.ModeToggleButton('Spelling', 1, $r('sys.media.ohos_ic_public_edit'))
           }
           .justifyContent(FlexAlign.Center)
           .margin({ bottom: 10 })
