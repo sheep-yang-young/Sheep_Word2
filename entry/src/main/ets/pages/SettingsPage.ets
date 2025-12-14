@@ -69,6 +69,22 @@ export struct SettingsPage {
     promptAction.showDialog({ title: '重置进度?', message: '保留单词，重置记忆。', buttons: [{ text: '取消', color: '#666' }, { text: '重置', color: '#FAAD14' }] }).then(async (res) => { if (res.index === 1) { await DatabaseManager.getInstance().resetLearningProgress(this.currentBook); this.refreshFlag++; } });
   }
 
+  async handleRebuildDatabase(): Promise<void> {
+    promptAction.showDialog({
+      title: '修复数据库?',
+      message: '将备份现有数据并重建表结构，可修复字段缺失或损坏的数据。',
+      buttons: [{ text: '取消', color: '#666' }, { text: '修复', color: '#0A59F7' }]
+    }).then(async (res) => {
+      if (res.index === 1) {
+        const success = await DatabaseManager.getInstance().rebuildDatabase();
+        this.refreshFlag++;
+        try {
+          promptAction.showToast({ message: success ? '数据库已重建' : '重建失败，请重试' });
+        } catch (e) {}
+      }
+    });
+  }
+
   build() {
     NavDestination() {
       Column() {
@@ -116,6 +132,7 @@ export struct SettingsPage {
               this.SettingsItem('导入 TXT 文件', $r('sys.media.ohos_ic_public_paste'), () => { this.handleImportTxt() })
               this.SettingsItem('导出数据备份', $r('sys.media.ohos_ic_public_share'), () => { this.handleExport() })
               this.SettingsItem('重置当前进度', $r('sys.media.ohos_ic_public_clock'), () => { this.handleResetProgress() }, '#FAAD14')
+              this.SettingsItem('修复数据库', $r('sys.media.ohos_ic_public_refresh'), () => { this.handleRebuildDatabase() }, '#0A59F7')
               this.SettingsItem('清空所有数据', $r('sys.media.ohos_ic_public_remove'), () => { this.handleClean() }, '#FF4D4F')
             }
           }

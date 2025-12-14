@@ -30,7 +30,9 @@ export interface Word {
 }
 
 export class DashboardStats {
-  due: number = 0;           // 今日待办
+  due: number = 0;           // 今日待办（含新词 + 待复习）
+  dueReviews: number = 0;    // 仅待复习
+  newToday: number = 0;      // 今日计划解锁的新词
   learnedToday: number = 0;  // 今日已学
   total: number = 0;         // 总数
   mastered: number = 0;      // 已掌握

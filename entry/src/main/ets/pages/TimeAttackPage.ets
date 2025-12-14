@@ -78,9 +78,10 @@ export struct TimeAttackPage {
 
   async startNewSession() {
     const db = DatabaseManager.getInstance();
-    const stats = await db.getDashboardStats(this.currentBookId);
     const dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
-    const dueCap = Math.min(stats.due || 0, dailyLimit || 0);
+    const stats = await db.getDashboardStats(this.currentBookId, dailyLimit);
+    const pendingToday = (stats.dueReviews || 0) + (stats.newToday || 0);
+    const dueCap = Math.min(pendingToday || 0, dailyLimit || 0);
     const limit = dueCap > 0 ? Math.min(50, dueCap) : 50;
 
     this.words = await db.getRandomWords(this.currentBookId, limit);
