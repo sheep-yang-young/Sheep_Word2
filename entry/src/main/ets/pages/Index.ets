@@ -117,7 +117,6 @@ struct HomePage {
     this.reviewMode = await PreferenceManager.getInstance().getReviewMode();
     this.selectedBook = await PreferenceManager.getInstance().getCurrentBook();
 
-    // 兼容旧数据：若当前书名为空或默认库，自动修正到第一本有数据的词书
     if (!this.selectedBook || this.selectedBook === "Default Library") {
       const db = DatabaseManager.getInstance();
       const hasData = await db.checkBookExists("CET-4");
@@ -144,7 +143,6 @@ struct HomePage {
   async refreshStats(): Promise<void> {
     const db = DatabaseManager.getInstance();
     this.selectedBook = await PreferenceManager.getInstance().getCurrentBook();
-    // 自动修正书名（兼容空字符串）
     if (!this.selectedBook || this.selectedBook === "Default Library" || this.selectedBook === "请选择词书") {
       const valid = await db.findAnyValidBook();
       const validHasData = await db.checkBookExists(valid);
@@ -156,9 +154,9 @@ struct HomePage {
       }
     }
 
-    // 先拿到用户设定的每日上限，避免使用旧值计算剩余额度
     this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
-    this.stats = await db.getDashboardStats(this.selectedBook, this.dailyLimit);
+    this.stats = await db.getDashboardStats(this.selectedBook, this.dailyLimit, this.reviewMode);
+
     this.chartData = await db.getProficiencyDistribution(this.selectedBook);
     this.heatmapData = await db.getActivityStats();
     this.todayRemaining = this.getTotalPending();
@@ -190,6 +188,7 @@ struct HomePage {
   async toggleMode(mode: number): Promise<void> {
     this.reviewMode = mode;
     await PreferenceManager.getInstance().setReviewMode(mode);
+    await this.refreshStats();
   }
 
   async handleSwitchBook(): Promise<void> {
@@ -258,32 +257,35 @@ struct HomePage {
     return '#52C41A';
   }
 
-  @Builder StatItem(count: string, label: string) {
-    Column({ space: 4 }) {
-      Text(count).fontSize(20).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
-      Text(label).fontSize(12).fontColor('#666')
-    }
-  }
-
   build() {
     Tabs({ barPosition: BarPosition.End, index: this.currentIndex }) {
-      // --- Tab 1: 学习 (Home) ---
       TabContent() {
         Column() {
-          // 顶部栏
           Row() {
             Column({ space: 4 }) {
-              Text('Current Plan').fontSize(12).fontColor('#999')
+              Text('当前词书').fontSize(12).fontColor('#999')
               Row() {
                 Text(this.selectedBook).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
                 SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(16).fontColor(['#1A1A1A']).margin({ left: 4 })
               }.onClick(() => { this.handleSwitchBook() })
             }
             .layoutWeight(1)
-            // [核心修复] 强制靠左对齐，解决“跑到中间”的问题
             .alignItems(HorizontalAlign.Start)
 
-            // Settings Button
+            Button({ type: ButtonType.Circle }) {
+              // 1. 图标改为月亮，颜色改为白色 (#FFF)
+              SymbolGlyph($r('sys.symbol.moon'))
+                .fontSize(22)
+                .fontColor(['#FFFFFF'])
+                .fontWeight(FontWeight.Medium)
+            }
+            .width(36).height(36)
+            .backgroundColor('#ffb689ff') // 2. 背景色改为紫色
+            .margin({ right: 12 })      // 与右边的设置按钮保持间距
+            .onClick(() => {
+              this.pageStack.pushPath({ name: 'ZenPage' })
+            })
+
             Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.gearshape')).fontSize(22).fontColor(['#333']).fontWeight(FontWeight.Medium) }
             .width(36).height(36).backgroundColor('#F0F2F5').onClick(() => { this.pageStack.pushPath({ name: 'SettingsPage' }) })
           }
@@ -291,22 +293,19 @@ struct HomePage {
 
           Scroll() {
             Column({ space: 20 }) {
-              // --- 仪表盘 ---
               Stack({ alignContent: Alignment.Center }) {
-                Circle({ width: 220, height: 220 }).strokeWidth(20).fill(Color.Transparent).stroke('#F0F2F5')
-                Circle({ width: 220, height: 220 })
-                  .strokeWidth(20).fill(Color.Transparent).stroke('#0A59F7')
-                  .rotate({ angle: -90 })
-                  .strokeDashArray([
-                    (this.stats.learnedToday + this.getTotalPending()) > 0
-                      ? (this.stats.learnedToday / (this.stats.learnedToday + this.getTotalPending())) * 692
-                      : 0,
-                    692
-                  ])
-                  .animation({ duration: 500, curve: Curve.EaseOut })
+                Progress({
+                  value: this.stats.learnedToday,
+                  total: Math.max(1, this.stats.learnedToday + this.getTotalPending()),
+                  type: ProgressType.Ring
+                })
+                  .width(220)
+                  .color('#0A59F7')
+                  .style({ strokeWidth: 20 })
+
                 Column() {
                   Text(this.getTotalPending().toString()).fontSize(64).fontWeight(FontWeight.Bolder).fontColor('#1A1A1A')
-                  Text('Due Today').fontSize(14).fontColor('#999').margin({ top: 5 })
+                  Text(`${this.reviewMode === 0 ? 'Card' : 'Spelling'} Due Today`).fontSize(14).fontColor('#999').margin({ top: 5 })
                   Text(`Done: ${this.stats.learnedToday}`)
                     .fontSize(14).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
                     .backgroundColor('rgba(10, 89, 247, 0.1)')
@@ -316,29 +315,15 @@ struct HomePage {
               }
               .height(260)
               .margin({ top: 20 })
-
-              // --- 数据行 ---
-              Row() {
-                this.StatItem(this.stats.total.toString(), 'Total')
-                Divider().vertical(true).height(30).color('#EEE')
-                this.StatItem(this.stats.mastered.toString(), 'Mastered')
-                Divider().vertical(true).height(30).color('#EEE')
-                this.StatItem(this.stats.learnedToday.toString(), 'Today')
-              }
-              .width('90%').justifyContent(FlexAlign.SpaceEvenly)
-              .padding(20).backgroundColor(Color.White).borderRadius(16)
-              .shadow({ radius: 10, color: 'rgba(0,0,0,0.05)' })
-
             }
             .width('100%')
           }
           .layoutWeight(1).scrollBar(BarState.Off)
 
-          // --- 模式切换 (白色背景 + 边框，无灰色块) ---
           Row({ space: 16 }) {
             Row() {
               Image($r('sys.media.ohos_ic_public_paste')).width(18).height(18).fillColor(this.reviewMode === 0 ? '#FFF' : '#999')
-              Text('Card').fontSize(14).fontColor(this.reviewMode === 0 ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
+              Text('卡片').fontSize(14).fontColor(this.reviewMode === 0 ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
             }
             .padding({ top: 10, bottom: 10, left: 24, right: 24 })
             .backgroundColor(this.reviewMode === 0 ? '#0A59F7' : '#FFFFFF')
@@ -349,7 +334,7 @@ struct HomePage {
 
             Row() {
               Image($r('sys.media.ohos_ic_public_edit')).width(18).height(18).fillColor(this.reviewMode === 1 ? '#FFF' : '#999')
-              Text('Spelling').fontSize(14).fontColor(this.reviewMode === 1 ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
+              Text('拼写').fontSize(14).fontColor(this.reviewMode === 1 ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
             }
             .padding({ top: 10, bottom: 10, left: 24, right: 24 })
             .backgroundColor(this.reviewMode === 1 ? '#0A59F7' : '#FFFFFF')
@@ -361,8 +346,7 @@ struct HomePage {
           .justifyContent(FlexAlign.Center)
           .margin({ bottom: 10 })
 
-          // --- 开始按钮 (自适应宽度，无Slider) ---
-          Button(this.getTotalPending() > 0 ? 'Start Review Session' : 'All Done for Today!')
+          Button(this.getTotalPending() > 0 ? '开始背词' : '今日任务完成了！')
             .height(56)
             .padding({ left: 40, right: 40 })
             .backgroundColor(this.getTotalPending() > 0 ? '#0A59F7' : '#52C41A')
@@ -373,31 +357,27 @@ struct HomePage {
         }
         .width('100%').height('100%').backgroundColor('#F5F7FA')
       }
-      .tabBar(this.TabBuilder('Study', 0, $r('sys.symbol.clock')))
+      .tabBar(this.TabBuilder('主页', 0, $r('sys.symbol.clock')))
 
-      // --- Tab 2: 练习 (Practice) ---
       TabContent() {
         PracticeHubPage()
       }
-      .tabBar(this.TabBuilder('Practice', 1, $r('sys.symbol.square_grid_2x2')))
+      .tabBar(this.TabBuilder('练习', 1, $r('sys.symbol.square_grid_2x2')))
 
-      // --- Tab 3: 分析 (Analysis) ---
       TabContent() {
         Column() {
-          Text('Learning Analytics').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#1A1A1A').width('100%').padding({ top: 60, left: 24, bottom: 20 })
+          Text('学习分析').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#1A1A1A').width('100%').padding({ top: 60, left: 24, bottom: 20 })
           Scroll() {
             Column({ space: 20 }) {
-              // 1. 热力图
               Column() {
-                Text('Study Consistency (Last 28 Days)').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333').width('100%').margin({ bottom: 15 })
+                Text('学习热力榜 (最近 28 天)').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333').width('100%').margin({ bottom: 15 })
                 Grid() {
                   ForEach(this.dateList, (date: string) => { GridItem() { Rect().width('100%').height(24).radius(4).fill(this.getHeatmapColor(this.heatmapData.get(date) || 0)) } })
                 }.columnsTemplate('1fr 1fr 1fr 1fr 1fr 1fr 1fr').rowsGap(6).columnsGap(6).height(130)
               }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(16).shadow({ radius: 10, color: 'rgba(0,0,0,0.05)' })
 
-              // 2. 熟练度
               Column() {
-                Text('Proficiency Distribution').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333').width('100%').margin({ bottom: 20 })
+                Text('效率分析').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333').width('100%').margin({ bottom: 20 })
                 SimpleLineChart({ data: this.chartData })
               }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(16).shadow({ radius: 10, color: 'rgba(0,0,0,0.05)' })
             }.width('100%')
@@ -405,19 +385,22 @@ struct HomePage {
         }
         .width('100%').height('100%').backgroundColor('#F5F7FA')
       }
-      .tabBar(this.TabBuilder('Analytics', 2, $r('sys.symbol.calendar_fill')))
+      .tabBar(this.TabBuilder('分析', 2, $r('sys.symbol.calendar_fill')))
     }
-    .scrollable(false).barHeight(60).onChange((index) => { this.currentIndex = index; this.refreshStats(); })
+    // [关键修改] 这里 barHeight 调整为 80，提高导航栏高度
+    .scrollable(false).barHeight(80).onChange((index) => { this.currentIndex = index; this.refreshStats(); })
   }
 
   @Builder TabBuilder(title: string, targetIndex: number, icon: Resource) {
     Column() {
       SymbolGlyph(icon)
-        .fontSize(24)
+      // [微调] 稍微增大图标尺寸 (24 -> 28) 以适配更高的导航栏
+        .fontSize(28)
         .fontColor(this.currentIndex === targetIndex ? ['#0A59F7'] : ['#999'])
         .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, this.currentIndex === targetIndex ? 1 : 0))
 
-      Text(title).fontSize(10).fontColor(this.currentIndex === targetIndex ? '#0A59F7' : '#999').margin({ top: 4 })
+      // [微调] 稍微增大文字尺寸 (10 -> 12)
+      Text(title).fontSize(12).fontColor(this.currentIndex === targetIndex ? '#0A59F7' : '#999').margin({ top: 4 })
     }
     .width('100%').height('100%').justifyContent(FlexAlign.Center)
   }

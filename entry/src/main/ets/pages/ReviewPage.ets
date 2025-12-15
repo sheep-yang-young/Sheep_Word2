@@ -32,7 +32,6 @@ export struct ReviewPage {
   @State scenarioFeedback: string = '';
   @State scenarioAnswered: boolean = false;
 
-  // [动效] 卡片旋转角度
   @State cardAngle: number = 0;
 
   private avPlayer: media.AVPlayer | null = null;
@@ -61,7 +60,7 @@ export struct ReviewPage {
     this.ttsSpeed = await prefs.getTtsSpeed();
     this.currentBookId = await prefs.getCurrentBook();
 
-    this.words = await DatabaseManager.getInstance().getTodayReviewWords(this.currentBookId, limit);
+    this.words = await DatabaseManager.getInstance().getTodayWordList(this.currentBookId, limit, this.reviewMode);
     this.isLoading = false;
 
     if (this.words.length === 0) {
@@ -73,7 +72,6 @@ export struct ReviewPage {
 
   loadCurrentWord(): void {
     if (this.currentIndex < this.words.length) {
-      // 重置翻转状态
       animateTo({ duration: 0 }, () => { this.cardAngle = 0; });
 
       const word = this.words[this.currentIndex];
@@ -119,7 +117,8 @@ export struct ReviewPage {
   }
 
   shuffleArray(list: string[]): string[] {
-    const arr = [...list];
+    // [修复] 不使用 [...list]，改为 .slice() 来复制数组
+    const arr = list.slice();
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       const tmp = arr[i];
@@ -163,7 +162,7 @@ export struct ReviewPage {
     if (input === correct) {
       this.isSpellingCorrect = true;
       this.triggerHaptic(ReviewGrade.EASY);
-      this.showAnswerWithFlip(); // 拼写正确也翻转
+      this.showAnswerWithFlip();
       this.playWord(this.words[this.currentIndex].spelling);
     } else {
       this.isSpellingCorrect = false;
@@ -178,8 +177,62 @@ export struct ReviewPage {
   async submitReview(grade: ReviewGrade): Promise<void> {
     this.triggerHaptic(grade);
     const currentWord = this.words[this.currentIndex];
-    const result = Sm2Algorithm.calculate(currentWord, grade);
-    if (currentWord.id !== undefined) { await DatabaseManager.getInstance().updateWordStats(currentWord.id, result.interval, result.repetition, result.easeFactor); await DatabaseManager.getInstance().logActivity(); }
+
+    // [修复] ArkTS 不支持对象展开 {...currentWord}。
+    // 手动创建一个用于计算的临时对象
+    let calcWord: Word = {
+      id: currentWord.id,
+      bookId: currentWord.bookId,
+      spelling: currentWord.spelling,
+      phonetic: currentWord.phonetic,
+      meaning: currentWord.meaning,
+      example: currentWord.example,
+      note: currentWord.note,
+      roots: currentWord.roots,
+      affixes: currentWord.affixes,
+      collocations: currentWord.collocations,
+      synonyms: currentWord.synonyms,
+      antonyms: currentWord.antonyms,
+      derivatives: currentWord.derivatives,
+      senses: currentWord.senses,
+      knowledgeScore: currentWord.knowledgeScore,
+
+      // 默认使用认知字段
+      proficiency: currentWord.proficiency,
+      repetition: currentWord.repetition,
+      interval: currentWord.interval,
+      easeFactor: currentWord.easeFactor,
+      lastReviewTime: currentWord.lastReviewTime,
+      nextReviewTime: currentWord.nextReviewTime,
+
+      // 拼写字段
+      proficiencySpelling: currentWord.proficiencySpelling,
+      repetitionSpelling: currentWord.repetitionSpelling,
+      intervalSpelling: currentWord.intervalSpelling,
+      easeFactorSpelling: currentWord.easeFactorSpelling,
+      lastReviewTimeSpelling: currentWord.lastReviewTimeSpelling,
+      nextReviewTimeSpelling: currentWord.nextReviewTimeSpelling
+    };
+
+    if (this.reviewMode === 1) {
+      // 如果是拼写模式，覆盖主要复习字段为拼写字段，供 Sm2Algorithm 使用
+      calcWord.interval = currentWord.intervalSpelling || 0;
+      calcWord.repetition = currentWord.repetitionSpelling || 0;
+      calcWord.easeFactor = currentWord.easeFactorSpelling || 2.5;
+    }
+
+    const result = Sm2Algorithm.calculate(calcWord, grade);
+
+    if (currentWord.id !== undefined) {
+      await DatabaseManager.getInstance().updateWordStats(
+        currentWord.id,
+        result.interval,
+        result.repetition,
+        result.easeFactor,
+        this.reviewMode
+      );
+      await DatabaseManager.getInstance().logActivity();
+    }
 
     this.refreshFlag++;
 
@@ -192,7 +245,6 @@ export struct ReviewPage {
     }
   }
 
-  // 翻转显示答案
   showAnswerWithFlip() {
     this.isAnswerShown = true;
     animateTo({ duration: 600, curve: Curve.EaseInOut }, () => {
@@ -205,7 +257,7 @@ export struct ReviewPage {
       Column() {
         if (this.isLoading) { LoadingProgress().width(50).height(50).color('#0A59F7') }
         else if (this.isFinished) {
-          Column({ space: 20 }) { Image($r('sys.media.ohos_ic_public_ok')).width(80).height(80).fillColor('#10B981'); Text('Session Complete!').fontSize(24).fontWeight(FontWeight.Bold); Text(this.reviewMode === 1 ? 'Spelling practice done.' : 'Daily goals finished.').fontSize(16).fontColor('#999'); Button('Back to Home').backgroundColor('#F0F2F5').fontColor('#333').onClick(() => { this.goBack() }) }.width('100%').height('100%').justifyContent(FlexAlign.Center)
+          Column({ space: 20 }) { Image($r('sys.media.ohos_ic_public_ok')).width(80).height(80).fillColor('#10B981'); Text('今日任务完成ヾ(≧▽≦*)o!').fontSize(24).fontWeight(FontWeight.Bold); Text(this.reviewMode === 1 ? 'Spelling practice done.' : 'Daily goals finished.').fontSize(16).fontColor('#999'); Button('返回主页').backgroundColor('#F0F2F5').fontColor('#333').onClick(() => { this.goBack() }) }.width('100%').height('100%').justifyContent(FlexAlign.Center)
         } else if (this.words.length > 0) {
           Row() { Image($r('sys.media.ohos_ic_public_arrow_left')).width(24).height(24).fillColor('#333').onClick(() => { this.goBack() }); Blank(); Text(`${this.currentIndex + 1} / ${this.words.length}`).fontColor('#999').fontSize(16).fontWeight(FontWeight.Medium); Blank(); Row({ space: 16 }) { Image($r('sys.media.ohos_ic_public_edit')).width(22).height(22).fillColor(this.currentNote ? '#0A59F7' : '#CCC').onClick(() => { this.noteController.open(); }); Image($r('sys.media.ohos_ic_public_remove')).width(22).height(22).fillColor('#CCC').onClick(() => { promptAction.showDialog({ title: 'Delete?', message: 'Permanently remove?', buttons: [{ text: 'Cancel', color: '#666' }, { text: 'Delete', color: '#FF4D4F' }] }).then(res => { if (res.index === 1) this.deleteCurrentWord(); }) }) } }.width('100%').padding({ left: 20, right: 20, bottom: 10 })
           Progress({ value: this.currentIndex + 1, total: this.words.length, type: ProgressType.Linear }).color('#0A59F7').width('100%').height(4)
@@ -213,7 +265,6 @@ export struct ReviewPage {
           Column() {
             CleanCard() {
               Stack() {
-                // --- 正面 ---
                 if (this.cardAngle < 90) {
                   Column() {
                     if (this.reviewMode === 1) {
@@ -235,19 +286,37 @@ export struct ReviewPage {
                     if (this.reviewMode === 0) Column() { Text('Tap to Show Answer').fontSize(16).fontColor('#BBB') }.height(200).justifyContent(FlexAlign.Center).width('100%').onClick(() => { this.showAnswerWithFlip(); this.playWord(this.words[this.currentIndex].spelling); })
                   }.width('100%').height('65%')
                 }
-                // --- 背面 ---
                 else {
                   Column() {
                     Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(32).height(32).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 20 })
                     Divider().color('#EEE').width('40%').margin({ top: 20, bottom: 20 })
-                    Scroll() { Column({ space: 10 }) { Text(this.words[this.currentIndex].meaning).fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center); if (this.words[this.currentIndex].example) Text(this.words[this.currentIndex].example).fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic).textAlign(TextAlign.Center).margin({ top: 10 }); if ((this.words[this.currentIndex].roots && this.words[this.currentIndex].roots!.length > 0) || (this.words[this.currentIndex].affixes && this.words[this.currentIndex].affixes!.length > 0)) this.KnowledgeChips('词根词缀卡', [...(this.words[this.currentIndex].roots || []), ...(this.words[this.currentIndex].affixes || [])], '#EEF2FF'); if (this.words[this.currentIndex].collocations && this.words[this.currentIndex].collocations!.length > 0) this.CollocationPractice(this.words[this.currentIndex].collocations!); if (this.words[this.currentIndex].derivatives && this.words[this.currentIndex].derivatives!.length > 0) this.KnowledgeChips('词族树', this.words[this.currentIndex].derivatives, '#F0FDF4'); if (this.words[this.currentIndex].synonyms && this.words[this.currentIndex].synonyms!.length > 0) this.KnowledgeChips('同义/反义', [...(this.words[this.currentIndex].synonyms || []), ...(this.words[this.currentIndex].antonyms || [])], '#F8FAFC'); if (this.words[this.currentIndex].senses && this.words[this.currentIndex].senses!.length > 0) this.KnowledgeChips('多义解读', this.words[this.currentIndex].senses, '#FFF7ED'); if (this.currentNote) Column() { Text('NOTE').fontSize(10).fontColor('#0A59F7').fontWeight(FontWeight.Bold); Text(this.currentNote).fontSize(14).fontColor('#666').margin({ top: 4 }) }.width('100%').padding(12).backgroundColor('#F0F9FF').borderRadius(8).alignItems(HorizontalAlign.Start).margin({ top: 20 }).onClick(() => { this.noteController.open() }) }.padding({ left: 20, right: 20 }) }.layoutWeight(1).scrollBar(BarState.Auto)
+                    Scroll() { Column({ space: 10 }) {
+                      Text(this.words[this.currentIndex].meaning).fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center);
+                      if (this.words[this.currentIndex].example) Text(this.words[this.currentIndex].example).fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic).textAlign(TextAlign.Center).margin({ top: 10 });
+
+                      // [修复] 使用 .concat 替代 [...a, ...b] 展开
+                      if ((this.words[this.currentIndex].roots && this.words[this.currentIndex].roots!.length > 0) || (this.words[this.currentIndex].affixes && this.words[this.currentIndex].affixes!.length > 0)) {
+                        this.KnowledgeChips('词根词缀卡', (this.words[this.currentIndex].roots || []).concat(this.words[this.currentIndex].affixes || []), '#EEF2FF');
+                      }
+
+                      if (this.words[this.currentIndex].collocations && this.words[this.currentIndex].collocations!.length > 0) this.CollocationPractice(this.words[this.currentIndex].collocations!);
+
+                      if (this.words[this.currentIndex].derivatives && this.words[this.currentIndex].derivatives!.length > 0) this.KnowledgeChips('词族树', this.words[this.currentIndex].derivatives, '#F0FDF4');
+
+                      // [修复] 使用 .concat 替代展开
+                      if (this.words[this.currentIndex].synonyms && this.words[this.currentIndex].synonyms!.length > 0) {
+                        this.KnowledgeChips('同义/反义', (this.words[this.currentIndex].synonyms || []).concat(this.words[this.currentIndex].antonyms || []), '#F8FAFC');
+                      }
+
+                      if (this.words[this.currentIndex].senses && this.words[this.currentIndex].senses!.length > 0) this.KnowledgeChips('多义解读', this.words[this.currentIndex].senses, '#FFF7ED');
+
+                      if (this.currentNote) Column() { Text('NOTE').fontSize(10).fontColor('#0A59F7').fontWeight(FontWeight.Bold); Text(this.currentNote).fontSize(14).fontColor('#666').margin({ top: 4 }) }.width('100%').padding(12).backgroundColor('#F0F9FF').borderRadius(8).alignItems(HorizontalAlign.Start).margin({ top: 20 }).onClick(() => { this.noteController.open() })
+                    }.padding({ left: 20, right: 20 }) }.layoutWeight(1).scrollBar(BarState.Auto)
                   }
                   .width('100%').height('65%')
-                  // [核心修复] 正确的旋转参数：绕Y轴旋转180度
                   .rotate({ x: 0, y: 1, z: 0, angle: 180 })
                 }
               }
-              // 容器整体旋转动画
               .rotate({ x: 0, y: 1, z: 0, angle: this.cardAngle })
             }
           }.padding({ left: 20, right: 20, top: 30 }).layoutWeight(1)

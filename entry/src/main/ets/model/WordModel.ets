@@ -1,6 +1,6 @@
 export interface Word {
   id?: number;
-  bookId: string; // 核心字段：所属词书
+  bookId: string;
   spelling: string;
   phonetic?: string;
   meaning: string;
@@ -19,20 +19,27 @@ export interface Word {
   // 练习反馈
   knowledgeScore?: number;
 
-  // SM-2 记忆算法字段
+  // --- 认知模式 (Card Mode) 记忆算法字段 ---
   proficiency: number;
   repetition: number;
   interval: number;
   easeFactor: number;
-
   lastReviewTime: number;
   nextReviewTime: number;
+
+  // --- [新增] 拼写模式 (Spelling Mode) 独立记忆算法字段 ---
+  proficiencySpelling?: number;
+  repetitionSpelling?: number;
+  intervalSpelling?: number;
+  easeFactorSpelling?: number;
+  lastReviewTimeSpelling?: number;
+  nextReviewTimeSpelling?: number;
 }
 
 export class DashboardStats {
-  due: number = 0;           // 今日待办（含新词 + 待复习）
+  due: number = 0;           // 今日待办总数
   dueReviews: number = 0;    // 仅待复习
-  newToday: number = 0;      // 今日计划解锁的新词
+  newToday: number = 0;      // 今日新词
   learnedToday: number = 0;  // 今日已学
   total: number = 0;         // 总数
   mastered: number = 0;      // 已掌握
