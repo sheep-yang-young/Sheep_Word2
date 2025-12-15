@@ -14,8 +14,10 @@ import { DictationPage } from './DictationPage';
 import { FlashTFPage } from './FlashTFPage';
 import { MatchPairsPage } from './MatchPairsPage';
 import { TimeAttackPage } from './TimeAttackPage';
+import { DailyNewsPage } from './DailyNewsPage';
 import { SimpleLineChart, CleanCard } from '../components/CustomComponents';
 import { PreferenceManager } from '../utils/PreferenceManager';
+import { NewsWebPage } from './NewsWebPage';
 import { promptAction } from '@kit.ArkUI';
 
 @Entry
@@ -68,6 +70,8 @@ struct Index {
     else if (name === 'FlashTFPage') { FlashTFPage() }
     else if (name === 'MatchPairsPage') { MatchPairsPage() }
     else if (name === 'TimeAttackPage') { TimeAttackPage() }
+    else if (name === 'DailyNewsPage') { DailyNewsPage() }
+    else if (name === 'NewsWebPage') { NewsWebPage() }
   }
 
   build() {
@@ -94,6 +98,13 @@ struct Index {
     .height('100%')
   }
 }
+// --- 数据结构 ---
+interface SheepSkin {
+  id: number;
+  name: string;
+  limit: number;
+  icon: Resource;
+}
 
 @Component
 struct HomePage {
@@ -105,13 +116,30 @@ struct HomePage {
   @State chartData: number[] = [0, 0, 0, 0, 0];
   @State heatmapData: Map<string, number> = new Map();
   @State dateList: string[] = [];
-  @State focusWords: Word[] = [];
-  @State planNote: string = '';
-  @State completionProgress: number = 0;
   @State selectedBook: string = "请选择词书";
   @State reviewMode: number = 0;
   @State dailyLimit: number = 20;
-  @State todayRemaining: number = 20;
+
+  @State currentSkinIndex: number = 0;
+  @State sheepScale: number = 1;
+
+  skins: SheepSkin[] = [
+    { id: 0, name: '初级小羊', limit: 0, icon: $r('app.media.icon') },
+    { id: 1, name: '学霸小羊', limit: 100, icon: $r('app.media.icon') },
+    { id: 2, name: '单词之王', limit: 500, icon: $r('app.media.icon') }
+  ];
+
+  warehouseController: CustomDialogController = new CustomDialogController({
+    builder: WoolWarehouseDialog({
+      masteredCount: this.stats.mastered,
+      skins: this.skins,
+      currentSkinIndex: this.currentSkinIndex,
+      onSelectSkin: (index: number) => { this.currentSkinIndex = index; }
+    }),
+    alignment: DialogAlignment.Center,
+    autoCancel: true,
+    customStyle: true
+  });
 
   async aboutToAppear(): Promise<void> {
     this.reviewMode = await PreferenceManager.getInstance().getReviewMode();
@@ -159,38 +187,32 @@ struct HomePage {
 
     this.chartData = await db.getProficiencyDistribution(this.selectedBook);
     this.heatmapData = await db.getActivityStats();
-    this.todayRemaining = this.getTotalPending();
-    this.focusWords = await db.getSpellingReviewWords(this.selectedBook, 3);
     this.generateDateList();
-    this.updatePlanNote();
-    this.calculateCompletion();
-  }
-
-  calculateCompletion(): void {
-    if (this.stats.total === 0) { this.completionProgress = 0; return; }
-    this.completionProgress = Math.min(100, Math.round((this.stats.mastered / this.stats.total) * 100));
-  }
-
-  updatePlanNote(): void {
-    const pendingReviews = this.stats.dueReviews || 0;
-    const pendingNew = this.stats.newToday || 0;
-    const pendingTotal = pendingReviews + pendingNew;
-
-    if (this.stats.total === 0) { this.planNote = '导入词书后即可开始计划'; return; }
-    if (pendingTotal === 0) { this.planNote = '已完成今日计划，可以巩固难词或预习'; return; }
-    if (pendingReviews > this.dailyLimit) { this.planNote = '今日复习量较多，先完成复习再解锁新词'; }
-    else if (this.stats.learnedToday >= this.dailyLimit && pendingReviews === 0) { this.planNote = '已完成今日新词目标，可以巩固难词或预习'; }
-    else { this.planNote = '按计划学习即可达成今日目标，加油！'; }
   }
 
   getTotalPending(): number { return Math.max(0, (this.stats.dueReviews || 0) + (this.stats.newToday || 0)); }
 
-  async toggleMode(mode: number): Promise<void> {
-    this.reviewMode = mode;
-    await PreferenceManager.getInstance().setReviewMode(mode);
-    await this.refreshStats();
+  getSheepImage(): Resource {
+    if (this.getTotalPending() > 0) {
+      return $r('app.media.icon');
+    }
+    return this.skins[this.currentSkinIndex].icon;
   }
 
+  interactWithSheep() {
+    animateTo({ duration: 100, onFinish: () => { animateTo({ duration: 100 }, () => this.sheepScale = 1) } }, () => {
+      this.sheepScale = 1.2;
+    });
+
+    const pending = this.getTotalPending();
+    if (pending > 0) {
+      promptAction.showToast({ message: `咩~ 我好饿，还有 ${pending} 堆草(单词)没吃！` });
+    } else {
+      promptAction.showToast({ message: '咩~ 吃得好饱！身上的羊毛更亮了！' });
+    }
+  }
+
+  // [修复] 加回了切换词书的逻辑函数
   async handleSwitchBook(): Promise<void> {
     promptAction.showActionMenu({
       title: '切换词书',
@@ -247,161 +269,216 @@ struct HomePage {
     if (count === 0) return '#F0F0F0';
     if (count <= 5) return '#BAE0FF';
     if (count <= 10) return '#69B1FF';
-    if (count <= 20) return '#1890FF';
-    return '#0050B3';
-  }
-
-  getProficiencyColor(p: number): string {
-    if (p < 20) return '#FF4D4F';
-    if (p < 60) return '#FAAD14';
-    return '#52C41A';
+    return '#1890FF';
   }
 
   build() {
     Tabs({ barPosition: BarPosition.End, index: this.currentIndex }) {
+      // 1. 牧场主页
       TabContent() {
         Column() {
           Row() {
+            // [修复] 恢复点击事件，点击书名调用 handleSwitchBook
             Column({ space: 4 }) {
-              Text('当前词书').fontSize(12).fontColor('#999')
+              Text('当前牧场').fontSize(12).fontColor('#999')
               Row() {
                 Text(this.selectedBook).fontSize(16).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
                 SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(16).fontColor(['#1A1A1A']).margin({ left: 4 })
-              }.onClick(() => { this.handleSwitchBook() })
+              }
             }
             .layoutWeight(1)
             .alignItems(HorizontalAlign.Start)
+            .onClick(() => { this.handleSwitchBook() }) // 绑定点击事件
 
+            // 羊毛仓库按钮
+            Button({ type: ButtonType.Capsule }) {
+              Row({ space: 4 }) {
+                SymbolGlyph($r('sys.symbol.gift')).fontSize(16).fontColor([Color.White])
+                Text('羊毛仓库').fontSize(12).fontColor(Color.White)
+              }
+            }
+            .height(32).backgroundColor('#FA8C16').margin({ right: 10 })
+            .onClick(() => { this.warehouseController.open() })
+
+            // ZenPage 月亮按钮
             Button({ type: ButtonType.Circle }) {
-              // 1. 图标改为月亮，颜色改为白色 (#FFF)
               SymbolGlyph($r('sys.symbol.moon'))
                 .fontSize(22)
                 .fontColor(['#FFFFFF'])
                 .fontWeight(FontWeight.Medium)
             }
             .width(36).height(36)
-            .backgroundColor('#ffb689ff') // 2. 背景色改为紫色
-            .margin({ right: 12 })      // 与右边的设置按钮保持间距
+            .backgroundColor('#ffb689ff')
+            .margin({ right: 12 })
             .onClick(() => {
               this.pageStack.pushPath({ name: 'ZenPage' })
             })
 
-            Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.gearshape')).fontSize(22).fontColor(['#333']).fontWeight(FontWeight.Medium) }
-            .width(36).height(36).backgroundColor('#F0F2F5').onClick(() => { this.pageStack.pushPath({ name: 'SettingsPage' }) })
+            // 设置按钮
+            SymbolGlyph($r('sys.symbol.gearshape')).fontSize(24).fontColor(['#333'])
+              .onClick(() => { this.pageStack.pushPath({ name: 'SettingsPage' }) })
           }
-          .width('100%').padding({ top: 60, left: 24, right: 24 })
+          .width('100%').padding({ top: 50, left: 24, right: 24, bottom: 10 })
 
           Scroll() {
             Column({ space: 20 }) {
-              Stack({ alignContent: Alignment.Center }) {
-                Progress({
-                  value: this.stats.learnedToday,
-                  total: Math.max(1, this.stats.learnedToday + this.getTotalPending()),
-                  type: ProgressType.Ring
-                })
-                  .width(220)
-                  .color('#0A59F7')
-                  .style({ strokeWidth: 20 })
+              Stack({ alignContent: Alignment.Bottom }) {
+                Column()
+                  .width('100%').height(280)
+                  .backgroundColor(this.getTotalPending() > 0 ? '#E6F7FF' : '#F6FFED')
+                  .borderRadius(24)
+                  .shadow({ radius: 20, color: 'rgba(0,0,0,0.05)' })
 
                 Column() {
-                  Text(this.getTotalPending().toString()).fontSize(64).fontWeight(FontWeight.Bolder).fontColor('#1A1A1A')
-                  Text(`${this.reviewMode === 0 ? 'Card' : 'Spelling'} Due Today`).fontSize(14).fontColor('#999').margin({ top: 5 })
-                  Text(`Done: ${this.stats.learnedToday}`)
-                    .fontSize(14).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
-                    .backgroundColor('rgba(10, 89, 247, 0.1)')
-                    .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-                    .borderRadius(10).margin({ top: 10 })
+                  if (this.getTotalPending() > 0) {
+                    Text(`还有 ${this.getTotalPending()} 个词没背...`).fontSize(12).fontColor('#fff').backgroundColor('#FF4D4F').padding(8).borderRadius(12).margin({bottom: 10})
+                      .animation({ duration: 500, curve: Curve.EaseInOut })
+                  } else {
+                    Text(`今日任务达成！`).fontSize(12).fontColor('#fff').backgroundColor('#52C41A').padding(8).borderRadius(12).margin({bottom: 10})
+                  }
+
+                  Image(this.getSheepImage())
+                    .height(160)
+                    .objectFit(ImageFit.Contain)
+                    .scale({ x: this.sheepScale, y: this.sheepScale })
+                    .onClick(() => this.interactWithSheep())
                 }
+                .padding({ bottom: 40 })
+
+                Row() {
+                  Text(`Mastered: ${this.stats.mastered}`).fontSize(12).fontColor('#666').fontWeight(FontWeight.Bold)
+                  Blank()
+                  Text(`Daily Goal: ${this.stats.learnedToday}/${this.dailyLimit}`).fontSize(12).fontColor('#666').fontWeight(FontWeight.Bold)
+                }
+                .width('100%').padding(20)
               }
-              .height(260)
-              .margin({ top: 20 })
+              .height(300).width('100%').padding({ left: 20, right: 20 })
+
+              // --- 快捷入口 ---
+              Row({ space: 12 }) {
+                this.QuickActionCard('开始喂草', '背单词', '#0A59F7', $r('sys.symbol.play_circle'), () => {
+                  this.pageStack.pushPath({ name: 'ReviewPage' })
+                })
+
+                // 每日新闻入口
+                this.QuickActionCard('每日新闻', 'China Daily', '#FA8C16', $r('sys.symbol.doc_text'), () => {
+                  this.pageStack.pushPath({ name: 'DailyNewsPage' })
+                })
+              }.padding({ left: 20, right: 20 })
+
+              Column() {
+                Text('近期活跃').fontSize(16).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 10 })
+                Grid() {
+                  ForEach(this.dateList, (date: string) => { GridItem() { Rect().width('100%').height(16).radius(4).fill(this.getHeatmapColor(this.heatmapData.get(date) || 0)) } })
+                }.columnsTemplate('1fr 1fr 1fr 1fr 1fr 1fr 1fr').height(80).rowsGap(4).columnsGap(4)
+              }
+              .padding(20).backgroundColor(Color.White).borderRadius(16).margin({ left: 20, right: 20 })
             }
-            .width('100%')
+            .padding({ bottom: 100 })
           }
           .layoutWeight(1).scrollBar(BarState.Off)
-
-          Row({ space: 16 }) {
-            Row() {
-              Image($r('sys.media.ohos_ic_public_paste')).width(18).height(18).fillColor(this.reviewMode === 0 ? '#FFF' : '#999')
-              Text('卡片').fontSize(14).fontColor(this.reviewMode === 0 ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
-            }
-            .padding({ top: 10, bottom: 10, left: 24, right: 24 })
-            .backgroundColor(this.reviewMode === 0 ? '#0A59F7' : '#FFFFFF')
-            .border({ width: 1, color: this.reviewMode === 0 ? '#0A59F7' : '#E5E7EB' })
-            .borderRadius(20)
-            .animation({ duration: 300 })
-            .onClick(() => { this.toggleMode(0) })
-
-            Row() {
-              Image($r('sys.media.ohos_ic_public_edit')).width(18).height(18).fillColor(this.reviewMode === 1 ? '#FFF' : '#999')
-              Text('拼写').fontSize(14).fontColor(this.reviewMode === 1 ? '#FFF' : '#999').fontWeight(FontWeight.Medium).margin({ left: 6 })
-            }
-            .padding({ top: 10, bottom: 10, left: 24, right: 24 })
-            .backgroundColor(this.reviewMode === 1 ? '#0A59F7' : '#FFFFFF')
-            .border({ width: 1, color: this.reviewMode === 1 ? '#0A59F7' : '#E5E7EB' })
-            .borderRadius(20)
-            .animation({ duration: 300 })
-            .onClick(() => { this.toggleMode(1) })
-          }
-          .justifyContent(FlexAlign.Center)
-          .margin({ bottom: 10 })
-
-          Button(this.getTotalPending() > 0 ? '开始背词' : '今日任务完成了！')
-            .height(56)
-            .padding({ left: 40, right: 40 })
-            .backgroundColor(this.getTotalPending() > 0 ? '#0A59F7' : '#52C41A')
-            .fontColor(Color.White).fontSize(18).fontWeight(FontWeight.Medium)
-            .shadow({ radius: 20, color: this.getTotalPending() > 0 ? 'rgba(10, 89, 247, 0.3)' : 'rgba(82, 196, 26, 0.3)', offsetY: 10 })
-            .onClick(() => { this.pageStack.pushPath({ name: 'ReviewPage' }); })
-            .margin({ bottom: 30, top: 5 })
         }
         .width('100%').height('100%').backgroundColor('#F5F7FA')
       }
-      .tabBar(this.TabBuilder('主页', 0, $r('sys.symbol.clock')))
+      .tabBar(this.TabBuilder('牧场', 0, $r('sys.symbol.house')))
 
-      TabContent() {
-        PracticeHubPage()
-      }
-      .tabBar(this.TabBuilder('练习', 1, $r('sys.symbol.square_grid_2x2')))
+      // 2. 练习页
+      TabContent() { PracticeHubPage() }
+      .tabBar(this.TabBuilder('游乐场', 1, $r('sys.symbol.square_grid_2x2')))
 
+      // 3. 分析页
       TabContent() {
         Column() {
-          Text('学习分析').fontSize(28).fontWeight(FontWeight.Bold).fontColor('#1A1A1A').width('100%').padding({ top: 60, left: 24, bottom: 20 })
-          Scroll() {
-            Column({ space: 20 }) {
-              Column() {
-                Text('学习热力榜 (最近 28 天)').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333').width('100%').margin({ bottom: 15 })
-                Grid() {
-                  ForEach(this.dateList, (date: string) => { GridItem() { Rect().width('100%').height(24).radius(4).fill(this.getHeatmapColor(this.heatmapData.get(date) || 0)) } })
-                }.columnsTemplate('1fr 1fr 1fr 1fr 1fr 1fr 1fr').rowsGap(6).columnsGap(6).height(130)
-              }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(16).shadow({ radius: 10, color: 'rgba(0,0,0,0.05)' })
-
-              Column() {
-                Text('效率分析').fontSize(16).fontWeight(FontWeight.Bold).fontColor('#333').width('100%').margin({ bottom: 20 })
-                SimpleLineChart({ data: this.chartData })
-              }.width('90%').padding(20).backgroundColor(Color.White).borderRadius(16).shadow({ radius: 10, color: 'rgba(0,0,0,0.05)' })
-            }.width('100%')
-          }.layoutWeight(1)
-        }
-        .width('100%').height('100%').backgroundColor('#F5F7FA')
+          Text('详细数据分析').fontSize(24).padding(30)
+          SimpleLineChart({ data: this.chartData })
+        }.width('100%').height('100%')
       }
-      .tabBar(this.TabBuilder('分析', 2, $r('sys.symbol.calendar_fill')))
+      .tabBar(this.TabBuilder('档案', 2, $r('sys.symbol.doc_plaintext')))
     }
-    // [关键修改] 这里 barHeight 调整为 80，提高导航栏高度
-    .scrollable(false).barHeight(80).onChange((index) => { this.currentIndex = index; this.refreshStats(); })
+    .scrollable(false).barHeight(60).onChange((index) => { this.currentIndex = index; this.refreshStats(); })
   }
 
   @Builder TabBuilder(title: string, targetIndex: number, icon: Resource) {
     Column() {
       SymbolGlyph(icon)
-      // [微调] 稍微增大图标尺寸 (24 -> 28) 以适配更高的导航栏
-        .fontSize(28)
+        .fontSize(24)
         .fontColor(this.currentIndex === targetIndex ? ['#0A59F7'] : ['#999'])
         .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, this.currentIndex === targetIndex ? 1 : 0))
-
-      // [微调] 稍微增大文字尺寸 (10 -> 12)
-      Text(title).fontSize(12).fontColor(this.currentIndex === targetIndex ? '#0A59F7' : '#999').margin({ top: 4 })
+      Text(title).fontSize(10).fontColor(this.currentIndex === targetIndex ? '#0A59F7' : '#999').margin({ top: 4 })
     }
     .width('100%').height('100%').justifyContent(FlexAlign.Center)
+  }
+
+  @Builder QuickActionCard(title: string, sub: string, color: string, icon: Resource, action: () => void) {
+    Row() {
+      Column({ space: 4 }) {
+        Text(title).fontSize(16).fontWeight(FontWeight.Bold).fontColor(Color.White)
+        Text(sub).fontSize(12).fontColor('rgba(255,255,255,0.8)')
+      }.alignItems(HorizontalAlign.Start)
+      Blank()
+      SymbolGlyph(icon).fontSize(24).fontColor([Color.White])
+    }
+    .layoutWeight(1)
+    .height(80)
+    .backgroundColor(color)
+    .borderRadius(16)
+    .padding(16)
+    .shadow({ radius: 10, color: color + '40', offsetY: 5 })
+    .onClick(action)
+  }
+}
+
+// --- 羊毛仓库弹窗 (皮肤选择) ---
+@CustomDialog
+struct WoolWarehouseDialog {
+  controller: CustomDialogController;
+  masteredCount: number = 0;
+  skins: SheepSkin[] = [];
+  currentSkinIndex: number = 0;
+  onSelectSkin: (index: number) => void = () => {};
+
+  build() {
+    Column() {
+      Text('羊毛仓库').fontSize(20).fontWeight(FontWeight.Bold).margin({ top: 20, bottom: 5 })
+      Text(`已掌握词汇: ${this.masteredCount}`).fontSize(12).fontColor('#666').margin({ bottom: 20 })
+
+      List({ space: 12 }) {
+        ForEach(this.skins, (skin: SheepSkin, index: number) => {
+          ListItem() {
+            Row() {
+              Image(skin.icon).width(40).height(40).margin({ right: 12 }).opacity(this.masteredCount >= skin.limit ? 1 : 0.5)
+              Column({ space: 4 }) {
+                Text(skin.name).fontSize(16).fontWeight(FontWeight.Medium).fontColor(this.masteredCount >= skin.limit ? '#333' : '#999')
+                if (this.masteredCount < skin.limit) {
+                  Text(`还需 ${skin.limit - this.masteredCount} 词解锁`).fontSize(12).fontColor('#FF4D4F')
+                } else {
+                  Text('已解锁').fontSize(12).fontColor('#52C41A')
+                }
+              }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+
+              if (this.masteredCount >= skin.limit) {
+                Radio({ value: skin.id.toString(), group: 'skins' })
+                  .checked(index === this.currentSkinIndex)
+                  .onChange((isChecked: boolean) => {
+                    if (isChecked) this.onSelectSkin(index);
+                  })
+              } else {
+                SymbolGlyph($r('sys.symbol.lock')).fontSize(20).fontColor(['#CCC'])
+              }
+            }
+            .width('100%').padding(12).backgroundColor('#F9F9F9').borderRadius(12)
+          }
+        })
+      }
+      .width('100%').height(300)
+
+      Button('关闭')
+        .width('90%').height(40).margin({ top: 20, bottom: 20 })
+        .backgroundColor('#F0F2F5').fontColor('#333')
+        .onClick(() => { this.controller.close() })
+    }
+    .width('90%')
+    .backgroundColor(Color.White)
+    .borderRadius(24)
   }
 }
