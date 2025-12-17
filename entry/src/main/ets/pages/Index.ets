@@ -114,31 +114,48 @@ interface SheepSkin {
 struct HomePage {
   @Consume('pageStack') pageStack: NavPathStack;
   @Consume @Watch('onRefreshTriggered') refreshFlag: number;
-
   @State currentIndex: number = 0;
   @State stats: DashboardStats = new DashboardStats();
+  // chartData: 熟练度分布 (0-20, 20-40, 40-60, 60-80, 80+)
   @State chartData: number[] = [0, 0, 0, 0, 0];
+  // heatmapData: 日期 -> 学习数量 map
   @State heatmapData: Map<string, number> = new Map();
+  // activityTrend: 每日学习数量数组 (用于折线图)
+  @State activityTrend: number[] = [];
   @State dateList: string[] = [];
   @State selectedBook: string = "请选择词书";
   @State reviewMode: number = 0;
   @State dailyLimit: number = 20;
-
   @State currentSkinIndex: number = 0;
   @State sheepScale: number = 1;
-
   skins: SheepSkin[] = [
-    { id: 0, name: '初级小羊', limit: 0, icon: $r('app.media.icon') },
-    { id: 1, name: '学霸小羊', limit: 100, icon: $r('app.media.icon') },
-    { id: 2, name: '单词之王', limit: 500, icon: $r('app.media.icon') }
+    {
+      id: 0,
+      name: '初级小羊',
+      limit: 0,
+      icon: $r('app.media.sheep_skin_0')
+    },
+    {
+      id: 1,
+      name: '学霸小羊',
+      limit: 100,
+      icon: $r('app.media.sheep_skin_1')
+    },
+    {
+      id: 2,
+      name: '单词之王',
+      limit: 500,
+      icon: $r('app.media.sheep_skin_2')
+    }
   ];
-
   warehouseController: CustomDialogController = new CustomDialogController({
     builder: WoolWarehouseDialog({
       masteredCount: this.stats.mastered,
       skins: this.skins,
       currentSkinIndex: this.currentSkinIndex,
-      onSelectSkin: (index: number) => { this.currentSkinIndex = index; }
+      onSelectSkin: (index: number) => {
+        this.currentSkinIndex = index;
+      }
     }),
     alignment: DialogAlignment.Center,
     autoCancel: true,
@@ -170,7 +187,9 @@ struct HomePage {
     this.refreshStats();
   }
 
-  onRefreshTriggered(): void { this.refreshStats(); }
+  onRefreshTriggered(): void {
+    this.refreshStats();
+  }
 
   async refreshStats(): Promise<void> {
     const db = DatabaseManager.getInstance();
@@ -192,19 +211,28 @@ struct HomePage {
     this.chartData = await db.getProficiencyDistribution(this.selectedBook);
     this.heatmapData = await db.getActivityStats();
     this.generateDateList();
+
+    // 生成折线图数据：将 dateList 映射为对应的学习数量
+    this.activityTrend = this.dateList.map(date => this.heatmapData.get(date) || 0);
   }
 
-  getTotalPending(): number { return Math.max(0, (this.stats.dueReviews || 0) + (this.stats.newToday || 0)); }
+  getTotalPending(): number {
+    return Math.max(0, (this.stats.dueReviews || 0) + (this.stats.newToday || 0));
+  }
 
   getSheepImage(): Resource {
     if (this.getTotalPending() > 0) {
-      return $r('app.media.icon');
+      return $r('app.media.sheep_hungry');
     }
     return this.skins[this.currentSkinIndex].icon;
   }
 
   interactWithSheep() {
-    animateTo({ duration: 100, onFinish: () => { animateTo({ duration: 100 }, () => this.sheepScale = 1) } }, () => {
+    animateTo({
+      duration: 100, onFinish: () => {
+        animateTo({ duration: 100 }, () => this.sheepScale = 1)
+      }
+    }, () => {
       this.sheepScale = 1.2;
     });
 
@@ -216,7 +244,6 @@ struct HomePage {
     }
   }
 
-  // [修复] 加回了切换词书的逻辑函数
   async handleSwitchBook(): Promise<void> {
     promptAction.showActionMenu({
       title: '切换词书',
@@ -227,12 +254,25 @@ struct HomePage {
         { text: '托福 (TOEFL)', color: '#333' }
       ]
     }).then(async (res) => {
-      let fileName = ''; let bookName = '';
+      let fileName = '';
+      let bookName = '';
       switch (res.index) {
-        case 0: fileName = 'CET4.json'; bookName = 'CET-4'; break;
-        case 1: fileName = 'CET6.json'; bookName = 'CET-6'; break;
-        case 2: fileName = 'GRE8000.json'; bookName = 'GRE8000'; break;
-        case 3: fileName = 'TOEFL.json'; bookName = 'TOEFL'; break;
+        case 0:
+          fileName = 'CET4.json';
+          bookName = 'CET-4';
+          break;
+        case 1:
+          fileName = 'CET6.json';
+          bookName = 'CET-6';
+          break;
+        case 2:
+          fileName = 'GRE8000.json';
+          bookName = 'GRE8000';
+          break;
+        case 3:
+          fileName = 'TOEFL.json';
+          bookName = 'TOEFL';
+          break;
       }
       if (fileName) {
         try {
@@ -255,16 +295,22 @@ struct HomePage {
               promptAction.showToast({ message: `未找到文件: ${fileName}` });
             }
           }
-        } catch (e) {}
+        } catch (e) {
+        }
       }
     });
   }
 
   generateDateList(): void {
-    const list: string[] = []; const today = new Date();
+    const list: string[] = [];
+    const today = new Date();
+    // 生成近28天的日期列表（从旧到新，用于图表显示）
     for (let i = 27; i >= 0; i--) {
-      const d = new Date(); d.setDate(today.getDate() - i);
-      list.push(`${d.getFullYear()}-${(d.getMonth()+1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`);
+      const d = new Date();
+      d.setDate(today.getDate() - i);
+      list.push(`${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate()
+        .toString()
+        .padStart(2, '0')}`);
     }
     this.dateList = list;
   }
@@ -282,7 +328,6 @@ struct HomePage {
       TabContent() {
         Column() {
           Row() {
-            // [修复] 恢复点击事件，点击书名调用 handleSwitchBook
             Column({ space: 4 }) {
               Text('当前牧场').fontSize(12).fontColor('#999')
               Row() {
@@ -292,7 +337,9 @@ struct HomePage {
             }
             .layoutWeight(1)
             .alignItems(HorizontalAlign.Start)
-            .onClick(() => { this.handleSwitchBook() }) // 绑定点击事件
+            .onClick(() => {
+              this.handleSwitchBook()
+            })
 
             // 羊毛仓库按钮
             Button({ type: ButtonType.Capsule }) {
@@ -302,7 +349,9 @@ struct HomePage {
               }
             }
             .height(32).backgroundColor('#FA8C16').margin({ right: 10 })
-            .onClick(() => { this.warehouseController.open() })
+            .onClick(() => {
+              this.warehouseController.open()
+            })
 
             // ZenPage 月亮按钮
             Button({ type: ButtonType.Circle }) {
@@ -311,7 +360,8 @@ struct HomePage {
                 .fontColor(['#FFFFFF'])
                 .fontWeight(FontWeight.Medium)
             }
-            .width(36).height(36)
+            .width(36)
+            .height(36)
             .backgroundColor('#ffb689ff')
             .margin({ right: 12 })
             .onClick(() => {
@@ -320,25 +370,46 @@ struct HomePage {
 
             // 设置按钮
             SymbolGlyph($r('sys.symbol.gearshape')).fontSize(24).fontColor(['#333'])
-              .onClick(() => { this.pageStack.pushPath({ name: 'SettingsPage' }) })
+              .onClick(() => {
+                this.pageStack.pushPath({ name: 'SettingsPage' })
+              })
           }
-          .width('100%').padding({ top: 50, left: 24, right: 24, bottom: 10 })
+          .width('100%')
+          .padding({
+            top: 50,
+            left: 24,
+            right: 24,
+            bottom: 10
+          })
 
           Scroll() {
             Column({ space: 20 }) {
               Stack({ alignContent: Alignment.Bottom }) {
                 Column()
-                  .width('100%').height(280)
+                  .width('100%')
+                  .height(280)
                   .backgroundColor(this.getTotalPending() > 0 ? '#E6F7FF' : '#F6FFED')
                   .borderRadius(24)
                   .shadow({ radius: 20, color: 'rgba(0,0,0,0.05)' })
 
                 Column() {
                   if (this.getTotalPending() > 0) {
-                    Text(`还有 ${this.getTotalPending()} 个词没背...`).fontSize(12).fontColor('#fff').backgroundColor('#FF4D4F').padding(8).borderRadius(12).margin({bottom: 10})
+                    Text(`还有 ${this.getTotalPending()} 个词没背...`)
+                      .fontSize(12)
+                      .fontColor('#fff')
+                      .backgroundColor('#FF4D4F')
+                      .padding(8)
+                      .borderRadius(12)
+                      .margin({ bottom: 10 })
                       .animation({ duration: 500, curve: Curve.EaseInOut })
                   } else {
-                    Text(`今日任务达成！`).fontSize(12).fontColor('#fff').backgroundColor('#52C41A').padding(8).borderRadius(12).margin({bottom: 10})
+                    Text(`今日任务达成！`)
+                      .fontSize(12)
+                      .fontColor('#fff')
+                      .backgroundColor('#52C41A')
+                      .padding(8)
+                      .borderRadius(12)
+                      .margin({ bottom: 10 })
                   }
 
                   Image(this.getSheepImage())
@@ -352,7 +423,10 @@ struct HomePage {
                 Row() {
                   Text(`Mastered: ${this.stats.mastered}`).fontSize(12).fontColor('#666').fontWeight(FontWeight.Bold)
                   Blank()
-                  Text(`Daily Goal: ${this.stats.learnedToday}/${this.dailyLimit}`).fontSize(12).fontColor('#666').fontWeight(FontWeight.Bold)
+                  Text(`Daily Goal: ${this.stats.learnedToday}/${this.dailyLimit}`)
+                    .fontSize(12)
+                    .fontColor('#666')
+                    .fontWeight(FontWeight.Bold)
                 }
                 .width('100%').padding(20)
               }
@@ -373,7 +447,15 @@ struct HomePage {
               Column() {
                 Text('近期活跃').fontSize(16).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 10 })
                 Grid() {
-                  ForEach(this.dateList, (date: string) => { GridItem() { Rect().width('100%').height(16).radius(4).fill(this.getHeatmapColor(this.heatmapData.get(date) || 0)) } })
+                  ForEach(this.dateList, (date: string) => {
+                    GridItem() {
+                      Rect()
+                        .width('100%')
+                        .height(16)
+                        .radius(4)
+                        .fill(this.getHeatmapColor(this.heatmapData.get(date) || 0))
+                    }
+                  })
                 }.columnsTemplate('1fr 1fr 1fr 1fr 1fr 1fr 1fr').height(80).rowsGap(4).columnsGap(4)
               }
               .padding(20).backgroundColor(Color.White).borderRadius(16).margin({ left: 20, right: 20 })
@@ -387,22 +469,83 @@ struct HomePage {
       .tabBar(this.TabBuilder('牧场', 0, $r('sys.symbol.house')))
 
       // 2. 练习页
-      TabContent() { PracticeHubPage() }
+      TabContent() {
+        PracticeHubPage()
+      }
       .tabBar(this.TabBuilder('游乐场', 1, $r('sys.symbol.square_grid_2x2')))
 
-      // 3. 分析页
+      // 3. 分析页 (优化后的档案页)
       TabContent() {
         Column() {
-          Text('详细数据分析').fontSize(24).padding(30)
-          SimpleLineChart({ data: this.chartData })
-        }.width('100%').height('100%')
+          Text('数据档案')
+            .fontSize(28)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#1A1A1A')
+            .width('100%')
+            .padding({ top: 60, left: 24, bottom: 20 })
+
+          Scroll() {
+            Column({ space: 16 }) {
+              // 顶部统计卡片
+              Grid() {
+                GridItem() {
+                  this.StatCard('累计单词', this.stats.total.toString(), '#E6F7FF', '#0A59F7')
+                }
+
+                GridItem() {
+                  this.StatCard('已掌握', this.stats.mastered.toString(), '#F6FFED', '#52C41A')
+                }
+
+                GridItem() {
+                  this.StatCard('连续打卡', `${this.stats.streak} 天`, '#FFF7E6', '#FA8C16')
+                }
+
+                GridItem() {
+                  this.StatCard('今日学习', this.stats.learnedToday.toString(), '#FFF0F6', '#EB2F96')
+                }
+              }
+              .columnsTemplate('1fr 1fr')
+              .rowsGap(12)
+              .columnsGap(12)
+              .height(180)
+              .padding({ left: 20, right: 20 })
+
+              // 熟练度分布图
+              CleanCard() {
+                Column() {
+                  Text('词汇熟练度分布').fontSize(16).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 20 })
+                  this.ProficiencyBarChart()
+                }
+              }
+
+              // 学习趋势图
+              CleanCard() {
+                Column() {
+                  Text('近30天学习趋势').fontSize(16).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 20 })
+                  // 使用已有的 SimpleLineChart 显示活动趋势
+                  SimpleLineChart({ data: this.activityTrend })
+                }
+              }
+            }
+            .padding({ bottom: 100 })
+          }
+          .layoutWeight(1)
+          .scrollBar(BarState.Off)
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#F5F7FA')
       }
       .tabBar(this.TabBuilder('档案', 2, $r('sys.symbol.doc_plaintext')))
     }
-    .scrollable(false).barHeight(75).onChange((index) => { this.currentIndex = index; this.refreshStats(); })
+    .scrollable(false).barHeight(75).onChange((index) => {
+      this.currentIndex = index;
+      this.refreshStats();
+    })
   }
 
-  @Builder TabBuilder(title: string, targetIndex: number, icon: Resource) {
+  @Builder
+  TabBuilder(title: string, targetIndex: number, icon: Resource) {
     Column() {
       SymbolGlyph(icon)
         .fontSize(24)
@@ -413,12 +556,14 @@ struct HomePage {
     .width('100%').height('100%').justifyContent(FlexAlign.Center).offset({ y: -5 })
   }
 
-  @Builder QuickActionCard(title: string, sub: string, color: string, icon: Resource, action: () => void) {
+  @Builder
+  QuickActionCard(title: string, sub: string, color: string, icon: Resource, action: () => void) {
     Row() {
       Column({ space: 4 }) {
         Text(title).fontSize(16).fontWeight(FontWeight.Bold).fontColor(Color.White)
         Text(sub).fontSize(12).fontColor('rgba(255,255,255,0.8)')
       }.alignItems(HorizontalAlign.Start)
+
       Blank()
       SymbolGlyph(icon).fontSize(24).fontColor([Color.White])
     }
@@ -429,6 +574,68 @@ struct HomePage {
     .padding(16)
     .shadow({ radius: 10, color: color + '40', offsetY: 5 })
     .onClick(action)
+  }
+
+  // --- 新增：统计数据小卡片 ---
+  @Builder
+  StatCard(title: string, value: string, bgColor: string, accentColor: string) {
+    Column() {
+      Text(title).fontSize(12).fontColor('#666').margin({ bottom: 8 })
+      Text(value).fontSize(24).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Start)
+    .padding(16)
+    .backgroundColor(Color.White)
+    .borderRadius(16)
+    .border({ width: 1, color: bgColor }) // 微妙的边框颜色
+    .shadow({ radius: 10, color: 'rgba(0,0,0,0.02)' })
+  }
+
+  // --- 新增：熟练度分布柱状图构建器 ---
+  @Builder
+  ProficiencyBarChart() {
+    Row({ space: 8 }) {
+      this.BarItem('陌生', this.chartData[0], '#FF4D4F')
+      this.BarItem('初识', this.chartData[1], '#FAAD14')
+      this.BarItem('了解', this.chartData[2], '#FADB14')
+      this.BarItem('熟悉', this.chartData[3], '#A0D911')
+      this.BarItem('掌握', this.chartData[4], '#52C41A')
+    }
+    .width('100%')
+    .height(180)
+    .alignItems(VerticalAlign.Bottom)
+  }
+
+  @Builder
+  BarItem(label: string, value: number, color: string) {
+    Column() {
+      // Bar (柱子)
+      // [修复] 将最大高度系数从 100 改为 70 (即最高只占 70%)
+      // 这样能确保底部始终留有 30% 的空间显示文字，不会被顶出去
+      Column()
+        .width('60%')
+        .height(`${Math.max(5, (value / (Math.max(...this.chartData, 10))) * 70)}%`)
+        .backgroundColor(color)
+        .borderRadius({ topLeft: 8, topRight: 8 })
+        .animation({ duration: 500, curve: Curve.EaseOut })
+
+      // Text (数值)
+      Text(value.toString())
+        .fontSize(10)
+        .fontColor('#999')
+        .margin({ top: 4, bottom: 2 })
+
+      // Label (标签：陌生/熟悉...)
+      Text(label)
+        .fontSize(12)
+        .fontColor('#666')
+    }
+    .layoutWeight(1)
+    .height('100%')
+    .justifyContent(FlexAlign.End) // 底部对齐
   }
 }
 

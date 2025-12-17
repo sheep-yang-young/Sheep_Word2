@@ -21,7 +21,33 @@ export class DatabaseManager {
 
   private constructor() {}
 
+  public static getInstance(): DatabaseManager {
+    if (!DatabaseManager.instance) {
+      DatabaseManager.instance = new DatabaseManager();
+    }
+    return DatabaseManager.instance;
+  }
+
+  async init(context: common.Context): Promise<void> {
+    this.context = context;
+    if (this.rdbStore) return;
+    try {
+      this.rdbStore = await relationalStore.getRdbStore(context, {
+        name: DB_NAME,
+        securityLevel: relationalStore.SecurityLevel.S1
+      });
+
+      const store = this.rdbStore;
+      if (store) {
+        await this.setupSchema(store);
+      }
+    } catch (err) {
+      console.error(`[Lumina] DB Init failed: ${JSON.stringify(err)}`);
+    }
+  }
+
   private async setupSchema(store: relationalStore.RdbStore): Promise<void> {
+    // 1. 创建主表
     await store.executeSql(`
       CREATE TABLE IF NOT EXISTS words (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +74,7 @@ export class DatabaseManager {
       )
     `);
 
-    // 1. 基础扩展字段
+    // 2. 动态添加字段 (防止旧版本数据库缺少字段导致崩溃)
     const optionalColumns: ColumnDefinition[] = [
       { name: 'book_id', type: 'TEXT' },
       { name: 'note', type: 'TEXT' },
@@ -62,7 +88,6 @@ export class DatabaseManager {
       { name: 'knowledgeScore', type: 'INTEGER' }
     ];
 
-    // 2. 拼写模式专用字段
     const spellingColumns: ColumnDefinition[] = [
       { name: 'proficiencySpelling', type: 'INTEGER DEFAULT 0' },
       { name: 'repetitionSpelling', type: 'INTEGER DEFAULT 0' },
@@ -77,68 +102,123 @@ export class DatabaseManager {
     for (const col of allColumns) {
       try {
         await store.executeSql(`ALTER TABLE words ADD COLUMN ${col.name} ${col.type}`);
-      } catch (e) {}
+      } catch (e) {
+        // 忽略 duplicate column name 错误，说明字段已存在
+      }
     }
 
+    // 3. 修复空 book_id
     try { await store.executeSql('UPDATE words SET book_id = "Default Library" WHERE book_id IS NULL OR book_id = ""'); } catch (e) {}
+
+    // 4. 创建活动日志表
     await store.executeSql(`CREATE TABLE IF NOT EXISTS activity_log (dateStr TEXT PRIMARY KEY, count INTEGER DEFAULT 0)`);
   }
 
-  public static getInstance(): DatabaseManager {
-    if (!DatabaseManager.instance) {
-      DatabaseManager.instance = new DatabaseManager();
-    }
-    return DatabaseManager.instance;
-  }
-
-  async init(context: common.Context): Promise<void> {
-    this.context = context;
-    if (this.rdbStore) return;
+  // --- [功能修复] 清空数据 (返回 boolean) ---
+  async cleanAllData(): Promise<boolean> {
+    const s = this.rdbStore;
+    if (!s) return false;
     try {
-      this.rdbStore = await relationalStore.getRdbStore(context, {
-        name: DB_NAME,
-        securityLevel: relationalStore.SecurityLevel.S1
-      });
-
-      const store = this.rdbStore;
-      if (store) {
-        await this.setupSchema(store);
-      }
-    } catch (err) {
-      console.error(`[Lumina] DB Init failed: ${JSON.stringify(err)}`);
+      await s.executeSql('DELETE FROM words');
+      await s.executeSql('DELETE FROM sqlite_sequence WHERE name="words"');
+      await s.executeSql('DELETE FROM activity_log');
+      return true;
+    } catch (e) {
+      console.error('[Lumina] cleanAllData failed:', JSON.stringify(e));
+      return false;
     }
   }
 
-  // --- [新增] 单个单词插入 (用于自定义导入) ---
+  // --- [功能修复] 重置进度 (返回 boolean) ---
+  async resetLearningProgress(bookId: string): Promise<boolean> {
+    const s = this.rdbStore;
+    if (!s) return false;
+    try {
+      const v: ValuesBucket = {
+        proficiency: 0, repetition: 0, interval: 0, easeFactor: 2.5, lastReviewTime: 0, nextReviewTime: 0,
+        proficiencySpelling: 0, repetitionSpelling: 0, intervalSpelling: 0, easeFactorSpelling: 2.5, lastReviewTimeSpelling: 0, nextReviewTimeSpelling: 0
+      };
+      const p = new relationalStore.RdbPredicates('words');
+      p.equalTo('book_id', bookId);
+      await s.update(v, p);
+      return true;
+    } catch (e) {
+      console.error('[Lumina] resetLearningProgress failed:', JSON.stringify(e));
+      return false;
+    }
+  }
+
+  // --- [功能修复] 重建数据库 (返回 boolean) ---
+  async rebuildDatabase(): Promise<boolean> {
+    const store = this.rdbStore;
+    if (!store) return false;
+
+    let wordsBackup: Word[] = [];
+    const activityBackup: ActivityRecord[] = [];
+
+    try {
+      // 1. 备份数据
+      try {
+        const wordsRes = await store.querySql('SELECT * FROM words');
+        while (wordsRes.goToNextRow()) wordsBackup.push(this.mapRowToWord(wordsRes));
+        wordsRes.close();
+      } catch (e) { console.error('Backup words failed', e); }
+
+      try {
+        const actRes = await store.querySql('SELECT dateStr, count FROM activity_log');
+        while (actRes.goToNextRow()) activityBackup.push({ dateStr: actRes.getString(0), count: actRes.getLong(1) });
+        actRes.close();
+      } catch (e) { console.error('Backup activity failed', e); }
+
+      // 2. 删除旧表
+      await store.executeSql('DROP TABLE IF EXISTS words');
+      await store.executeSql('DROP TABLE IF EXISTS activity_log');
+      try { await store.executeSql('DELETE FROM sqlite_sequence WHERE name="words"'); } catch (e) {}
+
+      // 3. 重建表结构
+      await this.setupSchema(store);
+
+      // 4. 恢复数据
+      store.beginTransaction();
+      for (const w of wordsBackup) {
+        const values: ValuesBucket = {
+          book_id: w.bookId, spelling: w.spelling, phonetic: w.phonetic ?? '', meaning: w.meaning ?? '', example: w.example ?? '', note: w.note ?? '',
+          roots: this.serializeArray(w.roots), affixes: this.serializeArray(w.affixes), collocations: this.serializeArray(w.collocations), synonyms: this.serializeArray(w.synonyms), antonyms: this.serializeArray(w.antonyms), derivatives: this.serializeArray(w.derivatives), senses: this.serializeArray(w.senses), knowledgeScore: w.knowledgeScore ?? 0,
+          proficiency: w.proficiency ?? 0, repetition: w.repetition ?? 0, interval: w.interval ?? 0, easeFactor: w.easeFactor ?? 2.5, lastReviewTime: w.lastReviewTime ?? 0, nextReviewTime: w.nextReviewTime ?? 0,
+          proficiencySpelling: w.proficiencySpelling ?? 0, repetitionSpelling: w.repetitionSpelling ?? 0, intervalSpelling: w.intervalSpelling ?? 0, easeFactorSpelling: w.easeFactorSpelling ?? 2.5, lastReviewTimeSpelling: w.lastReviewTimeSpelling ?? 0, nextReviewTimeSpelling: w.nextReviewTimeSpelling ?? 0
+        };
+        await store.insert('words', values);
+      }
+      for (const a of activityBackup) {
+        const values: ValuesBucket = { dateStr: a.dateStr, count: a.count };
+        await store.insert('activity_log', values);
+      }
+      store.commit();
+      return true;
+    } catch (e) {
+      console.error('[Lumina] Rebuild DB failed:', JSON.stringify(e));
+      try { store.rollBack(); } catch (er) {}
+      return false;
+    }
+  }
+
+  // --- 添加单个单词 ---
   async addWord(word: Word): Promise<number> {
     const s = this.rdbStore;
     if (!s) return 0;
     try {
-      // 查重：同一本词书下不允许重复单词
       const p = new relationalStore.RdbPredicates('words');
       p.equalTo('book_id', word.bookId).and().equalTo('spelling', word.spelling);
       const r = await s.query(p);
       if (r.rowCount > 0) {
         r.close();
-        return 0; // 已存在，跳过
+        return 0;
       }
       r.close();
 
       const v: ValuesBucket = {
-        book_id: word.bookId,
-        spelling: word.spelling,
-        phonetic: word.phonetic || '',
-        meaning: word.meaning || '',
-        example: word.example || '',
-        note: word.note || '',
-        roots: this.serializeArray(word.roots),
-        affixes: this.serializeArray(word.affixes),
-        collocations: this.serializeArray(word.collocations),
-        synonyms: this.serializeArray(word.synonyms),
-        antonyms: this.serializeArray(word.antonyms),
-        derivatives: this.serializeArray(word.derivatives),
-        senses: this.serializeArray(word.senses),
-        knowledgeScore: word.knowledgeScore ?? 0,
+        book_id: word.bookId, spelling: word.spelling, phonetic: word.phonetic || '', meaning: word.meaning || '', example: word.example || '', note: word.note || '',
+        roots: this.serializeArray(word.roots), affixes: this.serializeArray(word.affixes), collocations: this.serializeArray(word.collocations), synonyms: this.serializeArray(word.synonyms), antonyms: this.serializeArray(word.antonyms), derivatives: this.serializeArray(word.derivatives), senses: this.serializeArray(word.senses), knowledgeScore: word.knowledgeScore ?? 0,
         proficiency: 0, repetition: 0, interval: 0, easeFactor: 2.5, lastReviewTime: 0, nextReviewTime: 0,
         proficiencySpelling: 0, repetitionSpelling: 0, intervalSpelling: 0, easeFactorSpelling: 2.5, lastReviewTimeSpelling: 0, nextReviewTimeSpelling: 0
       };
@@ -148,18 +228,16 @@ export class DatabaseManager {
     }
   }
 
-  // --- 核心：万能随机取词 ---
+  // --- 随机取词 ---
   async getRandomWords(bookId: string, limit: number = 20): Promise<Word[]> {
     const s = this.rdbStore;
     if (!s) return [];
     try {
-      // 1. 尝试查询当前书
       let r = await s.querySql(`SELECT * FROM words WHERE book_id = ? ORDER BY RANDOM() LIMIT ?`, [bookId, limit]);
       let w: Word[] = [];
       while (r.goToNextRow()) w.push(this.mapRowToWord(r));
       r.close();
 
-      // 2. 如果没数据，尝试查找任意一本有数据的书
       if (w.length === 0) {
         const validBook = await this.findAnyValidBook();
         if (validBook !== "Default Library" && validBook !== bookId) {
@@ -168,48 +246,48 @@ export class DatabaseManager {
           r.close();
         }
       }
-
-      // 3. 全库随机搜索
       if (w.length === 0) {
         r = await s.querySql(`SELECT * FROM words ORDER BY RANDOM() LIMIT ?`, [limit]);
         while (r.goToNextRow()) w.push(this.mapRowToWord(r));
         r.close();
       }
-
       return w;
     } catch (e) { return []; }
   }
 
-  // --- 搜索功能 ---
+  // --- 搜索 ---
   async searchWords(bookId: string, k: string, m: number = 0): Promise<Word[]> {
-    const s=this.rdbStore;
-    if(!s)return[];
-    try{
-      const p=new relationalStore.RdbPredicates('words');
-      p.equalTo('book_id',bookId);
-      if(k&&k.trim()!=='') p.and().beginWrap().like('spelling',`%${k}%`).or().like('meaning',`%${k}%`).endWrap();
-      switch(m){
-        case 1:p.orderByAsc('proficiency');break;
-        case 2:p.orderByDesc('proficiency');break;
-        case 3:p.orderByDesc('id');break;
-        default:p.orderByAsc('spelling');break;
+    const s = this.rdbStore;
+    if (!s) return [];
+    try {
+      const p = new relationalStore.RdbPredicates('words');
+      p.equalTo('book_id', bookId);
+      if (k && k.trim() !== '') p.and().beginWrap().like('spelling', `%${k}%`).or().like('meaning', `%${k}%`).endWrap();
+      switch (m) {
+        case 1: p.orderByAsc('proficiency'); break;
+        case 2: p.orderByDesc('proficiency'); break;
+        case 3: p.orderByDesc('id'); break;
+        default: p.orderByAsc('spelling'); break;
       }
       p.limitAs(100);
-      const r=await s.query(p);
-      const w:Word[]=[];
-      while(r.goToNextRow())w.push(this.mapRowToWord(r));
+      const r = await s.query(p);
+      const w: Word[] = [];
+      while (r.goToNextRow()) w.push(this.mapRowToWord(r));
       r.close();
       return w;
-    }catch(e){return[];}
+    } catch (e) { return []; }
   }
-
-  // --- 统计面板 ---
+  // --- 统计面板 (Debug 版) ---
   async getDashboardStats(bookId: string, dailyLimit: number = 20, mode: number = 0): Promise<DashboardStats> {
     let stats = new DashboardStats();
     const store = this.rdbStore;
-    if (!store) return stats;
+    if (!store) {
+      console.error('[Lumina Debug] Store is null! Database not initialized.');
+      return stats;
+    }
 
     try {
+      console.info(`[Lumina Debug] Getting stats for book: ${bookId}, mode: ${mode}`);
       const todayStart = new Date(); todayStart.setHours(0,0,0,0);
       const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);
 
@@ -217,6 +295,8 @@ export class DatabaseManager {
       const totalRes = await store.querySql('SELECT count(*) FROM words WHERE book_id = ?', [bookId]);
       if (totalRes.goToFirstRow()) stats.total = totalRes.getLong(0);
       totalRes.close();
+
+      console.info(`[Lumina Debug] Total words found: ${stats.total}`);
 
       if (mode === 0) {
         // === 认知模式 ===
@@ -260,9 +340,14 @@ export class DatabaseManager {
       stats.due = stats.dueReviews + stats.newToday;
       stats.streak = await this.calculateStreak();
       return stats;
-    } catch (e) { return stats; }
+    } catch (e) {
+      // 这里会打印具体的 SQL 错误
+      console.error(`[Lumina Debug] getDashboardStats Error: ${JSON.stringify(e)}`);
+      return stats;
+    }
   }
 
+  // --- 获取今日复习列表 ---
   async getTodayWordList(bookId: string, dailyLimit: number, mode: number): Promise<Word[]> {
     if (mode === 1) return this.getTodaySpellingWords(bookId, dailyLimit);
     else return this.getTodayCardWords(bookId, dailyLimit);
@@ -306,12 +391,16 @@ export class DatabaseManager {
     } catch (e) { return []; }
   }
 
+  // --- 更新单词状态 (SM2) ---
   async updateWordStats(id: number, interval: number, repetition: number, easeFactor: number, mode: number = 0): Promise<void> {
     const s = this.rdbStore; if (!s) return;
     const now = Date.now();
     const next = now + (interval * 24 * 60 * 60 * 1000);
+
+    // [修复] 计算熟练度，确保 interval=1 也有 5% (避免0)，interval=22 就是 100%
     let np = Math.min(100, Math.round((interval / 21) * 100));
-    if (repetition > 0 && np < 10) np = 10;
+    if (repetition > 0 && np < 5) np = 5;
+
     const p = new relationalStore.RdbPredicates('words');
     p.equalTo('id', id);
     let v: ValuesBucket;
@@ -320,6 +409,7 @@ export class DatabaseManager {
     await s.update(v, p);
   }
 
+  // --- 辅助方法 ---
   async findAnyValidBook(): Promise<string> { const s=this.rdbStore; if(!s)return"Default Library"; try{ const q='SELECT book_id FROM words GROUP BY book_id HAVING count(*) > 0 LIMIT 1'; const r=await s.querySql(q); let b="Default Library"; if(r.goToFirstRow()) b = r.getString(0); r.close(); return b || "Default Library"; } catch(e){ return"Default Library"; } }
   async checkBookExists(bookId: string): Promise<boolean> { const s=this.rdbStore; if(!s)return false; try{const r=await s.querySql('SELECT count(*) FROM words WHERE book_id = ?',[bookId]); let c=0; if(r.goToFirstRow())c=r.getLong(0); r.close(); return c>0;}catch(e){return false;} }
   async updateWordInfo(w: Word): Promise<void> { const s=this.rdbStore; if(!s||!w.id)return; const v:ValuesBucket={spelling:w.spelling,phonetic:w.phonetic??'',meaning:w.meaning,example:w.example??'',note:w.note??'',roots:this.serializeArray(w.roots),affixes:this.serializeArray(w.affixes),collocations:this.serializeArray(w.collocations),synonyms:this.serializeArray(w.synonyms),antonyms:this.serializeArray(w.antonyms),derivatives:this.serializeArray(w.derivatives),senses:this.serializeArray(w.senses),knowledgeScore:w.knowledgeScore??0}; const p=new relationalStore.RdbPredicates('words'); p.equalTo('id',w.id); await s.update(v,p); }
@@ -336,20 +426,8 @@ export class DatabaseManager {
       for (const w of words) {
         if (!w.spelling || set.has(w.spelling)) continue;
         const v: ValuesBucket = {
-          book_id: bookId,
-          spelling: w.spelling,
-          phonetic: w.phonetic || '',
-          meaning: w.meaning || '',
-          example: w.example || '',
-          note: w.note || '',
-          roots: this.serializeArray(w.roots),
-          affixes: this.serializeArray(w.affixes),
-          collocations: this.serializeArray(w.collocations),
-          synonyms: this.serializeArray(w.synonyms),
-          antonyms: this.serializeArray(w.antonyms),
-          derivatives: this.serializeArray(w.derivatives),
-          senses: this.serializeArray(w.senses),
-          knowledgeScore: w.knowledgeScore ?? 0,
+          book_id: bookId, spelling: w.spelling, phonetic: w.phonetic || '', meaning: w.meaning || '', example: w.example || '', note: w.note || '',
+          roots: this.serializeArray(w.roots), affixes: this.serializeArray(w.affixes), collocations: this.serializeArray(w.collocations), synonyms: this.serializeArray(w.synonyms), antonyms: this.serializeArray(w.antonyms), derivatives: this.serializeArray(w.derivatives), senses: this.serializeArray(w.senses), knowledgeScore: w.knowledgeScore ?? 0,
           proficiency: w.proficiency ?? 0, repetition: w.repetition ?? 0, interval: w.interval ?? 0, easeFactor: w.easeFactor ?? 2.5, lastReviewTime: w.lastReviewTime ?? 0, nextReviewTime: w.nextReviewTime ?? 0,
           proficiencySpelling: 0, repetitionSpelling: 0, intervalSpelling: 0, easeFactorSpelling: 2.5, lastReviewTimeSpelling: 0, nextReviewTimeSpelling: 0
         };
@@ -362,40 +440,31 @@ export class DatabaseManager {
     } catch (e) { try { s.rollBack() } catch (er) {} return 0; }
   }
 
-  async cleanAllData(): Promise<void> { const s=this.rdbStore; if(!s)return; try{await s.executeSql('DELETE FROM words'); await s.executeSql('DELETE FROM sqlite_sequence WHERE name="words"'); await s.executeSql('DELETE FROM activity_log');}catch(e){} }
-  async resetLearningProgress(bookId: string): Promise<void> { const s = this.rdbStore; if (!s) return; const v: ValuesBucket = { proficiency: 0, repetition: 0, interval: 0, easeFactor: 2.5, lastReviewTime: 0, nextReviewTime: 0, proficiencySpelling: 0, repetitionSpelling: 0, intervalSpelling: 0, easeFactorSpelling: 2.5, lastReviewTimeSpelling: 0, nextReviewTimeSpelling: 0 }; const p = new relationalStore.RdbPredicates('words'); p.equalTo('book_id', bookId); await s.update(v, p); }
-
-  async rebuildDatabase(): Promise<boolean> {
-    const store = this.rdbStore; if (!store) return false;
-    let wordsBackup: Word[] = [];
-    const activityBackup: ActivityRecord[] = [];
-    try {
-      const wordsRes = await store.querySql('SELECT * FROM words');
-      while (wordsRes.goToNextRow()) wordsBackup.push(this.mapRowToWord(wordsRes));
-      wordsRes.close();
-      try { const actRes = await store.querySql('SELECT dateStr, count FROM activity_log'); while (actRes.goToNextRow()) activityBackup.push({ dateStr: actRes.getString(0), count: actRes.getLong(1) }); actRes.close(); } catch (e) {}
-      await store.executeSql('DROP TABLE IF EXISTS words'); await store.executeSql('DROP TABLE IF EXISTS activity_log'); try { await store.executeSql('DELETE FROM sqlite_sequence WHERE name="words"'); } catch (e) {}
-      await this.setupSchema(store);
-      store.beginTransaction();
-      for (const w of wordsBackup) {
-        const values: ValuesBucket = {
-          book_id: w.bookId, spelling: w.spelling, phonetic: w.phonetic ?? '', meaning: w.meaning ?? '', example: w.example ?? '', note: w.note ?? '',
-          roots: this.serializeArray(w.roots), affixes: this.serializeArray(w.affixes), collocations: this.serializeArray(w.collocations), synonyms: this.serializeArray(w.synonyms), antonyms: this.serializeArray(w.antonyms), derivatives: this.serializeArray(w.derivatives), senses: this.serializeArray(w.senses), knowledgeScore: w.knowledgeScore ?? 0,
-          proficiency: w.proficiency ?? 0, repetition: w.repetition ?? 0, interval: w.interval ?? 0, easeFactor: w.easeFactor ?? 2.5, lastReviewTime: w.lastReviewTime ?? 0, nextReviewTime: w.nextReviewTime ?? 0,
-          proficiencySpelling: w.proficiencySpelling ?? 0, repetitionSpelling: w.repetitionSpelling ?? 0, intervalSpelling: w.intervalSpelling ?? 0, easeFactorSpelling: w.easeFactorSpelling ?? 2.5, lastReviewTimeSpelling: w.lastReviewTimeSpelling ?? 0, nextReviewTimeSpelling: w.nextReviewTimeSpelling ?? 0
-        };
-        await store.insert('words', values);
-      }
-      for (const a of activityBackup) { const values: ValuesBucket = { dateStr: a.dateStr, count: a.count }; await store.insert('activity_log', values); }
-      store.commit();
-      return true;
-    } catch (e) { try { store.rollBack(); } catch (er) {} return false; }
-  }
-
   async calculateStreak(): Promise<number> { const s=this.rdbStore; if(!s)return 0; try{const r=await s.querySql('SELECT dateStr FROM activity_log ORDER BY dateStr DESC'); const d:string[]=[]; while(r.goToNextRow())d.push(r.getString(0)); r.close(); if(d.length===0)return 0; let k=0; const t=new Date(); let h=d.includes(`${t.getFullYear()}-${(t.getMonth()+1).toString().padStart(2,'0')}-${t.getDate().toString().padStart(2,'0')}`); let c=h?new Date():(()=>{const x=new Date();x.setDate(x.getDate()-1);return x;})(); while(true){const str=`${c.getFullYear()}-${(c.getMonth()+1).toString().padStart(2,'0')}-${c.getDate().toString().padStart(2,'0')}`; if(d.includes(str)){k++;c.setDate(c.getDate()-1);}else{break;}} return k;}catch(e){return 0;} }
   async logActivity(): Promise<void> { const s=this.rdbStore; if(!s)return; const d=`${new Date().getFullYear()}-${(new Date().getMonth()+1).toString().padStart(2,'0')}-${new Date().getDate().toString().padStart(2,'0')}`; try{const r=await s.querySql('SELECT count FROM activity_log WHERE dateStr=?',[d]); let c=0; let ex=false; if(r.goToFirstRow()){c=r.getLong(0);ex=true;} r.close(); const v:ValuesBucket={dateStr:d,count:c+1}; if(ex){const p=new relationalStore.RdbPredicates('activity_log'); p.equalTo('dateStr',d); await s.update(v,p);}else{await s.insert('activity_log',v);}}catch(e){} }
   async getActivityStats(days: number=28): Promise<Map<string,number>> { const s=this.rdbStore; const m=new Map<string,number>(); if(!s)return m; try{const r=await s.querySql(`SELECT * FROM activity_log ORDER BY dateStr DESC LIMIT ?`,[days]); while(r.goToNextRow())m.set(r.getString(0),r.getLong(1)); r.close();}catch(e){} return m; }
-  async getProficiencyDistribution(bookId: string): Promise<number[]> { const s=this.rdbStore; if(!s)return[0,0,0,0,0]; try{const q=`SELECT SUM(CASE WHEN proficiency<=20 THEN 1 ELSE 0 END),SUM(CASE WHEN proficiency>20 AND proficiency<=40 THEN 1 ELSE 0 END),SUM(CASE WHEN proficiency>40 AND proficiency<=60 THEN 1 ELSE 0 END),SUM(CASE WHEN proficiency>60 AND proficiency<=80 THEN 1 ELSE 0 END),SUM(CASE WHEN proficiency>80 THEN 1 ELSE 0 END) FROM words WHERE book_id=?`; const r=await s.querySql(q,[bookId]); const a=[0,0,0,0,0]; if(r.goToFirstRow()){a[0]=r.getLong(0)||0;a[1]=r.getLong(1)||0;a[2]=r.getLong(2)||0;a[3]=r.getLong(3)||0;a[4]=r.getLong(4)||0;} r.close(); return a;}catch(e){return[0,0,0,0,0];} }
+
+  // [修复] 熟练度分布统计：区分 0 (陌生) 和 0-20 (初识)
+  async getProficiencyDistribution(bookId: string): Promise<number[]> {
+    const s=this.rdbStore; if(!s)return[0,0,0,0,0];
+    try{
+      const q=`SELECT
+      SUM(CASE WHEN proficiency = 0 THEN 1 ELSE 0 END),
+      SUM(CASE WHEN proficiency > 0 AND proficiency <= 20 THEN 1 ELSE 0 END),
+      SUM(CASE WHEN proficiency > 20 AND proficiency <= 50 THEN 1 ELSE 0 END),
+      SUM(CASE WHEN proficiency > 50 AND proficiency <= 80 THEN 1 ELSE 0 END),
+      SUM(CASE WHEN proficiency > 80 THEN 1 ELSE 0 END)
+      FROM words WHERE book_id=?`;
+      const r=await s.querySql(q,[bookId]);
+      const a=[0,0,0,0,0];
+      if(r.goToFirstRow()){
+        a[0]=r.getLong(0)||0; a[1]=r.getLong(1)||0; a[2]=r.getLong(2)||0; a[3]=r.getLong(3)||0; a[4]=r.getLong(4)||0;
+      }
+      r.close();
+      return a;
+    }catch(e){return[0,0,0,0,0];}
+  }
+
   async recordKnowledgePractice(id: number, correct: boolean): Promise<void> { const s=this.rdbStore; if(!s)return; try{const res=await s.querySql('SELECT knowledgeScore, proficiency FROM words WHERE id=?',[id]); let score=0; let prof=0; if(res.goToFirstRow()){score=res.getLong(0)||0; prof=res.getLong(1)||0;} res.close(); const now=Date.now(); const delta=correct?5: -2; const newScore=Math.max(0, score + delta); const newProf=Math.min(100, Math.max(0, prof + (correct?3:0))); const v:ValuesBucket={knowledgeScore:newScore, proficiency:newProf, lastReviewTime:now, nextReviewTime:now + 24*60*60*1000}; const p=new relationalStore.RdbPredicates('words'); p.equalTo('id',id); await s.update(v,p); await this.logActivity(); }catch(e){} }
   async getSpellingReviewWords(bookId: string, limit: number = 20): Promise<Word[]> { const s=this.rdbStore; if(!s)return[]; try{const q=`SELECT * FROM words WHERE book_id=? AND lastReviewTime>0 ORDER BY proficiency ASC LIMIT ?`; const r=await s.querySql(q,[bookId,limit]); const w:Word[]=[]; while(r.goToNextRow())w.push(this.mapRowToWord(r)); r.close(); return w;}catch(e){return[];} }
 
