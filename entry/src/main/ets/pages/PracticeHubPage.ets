@@ -65,6 +65,8 @@ export struct PracticeHubPage {
           this.PracticeItem('闪卡判断', '快速判断释义对错', '#F6FFED', '#52C41A', 'FlashTFPage')
           this.PracticeItem('配对消消乐', '单词与释义连连看', '#FFF0F6', '#EB2F96', 'MatchPairsPage')
           this.PracticeItem('60秒冲刺', '极速选择题挑战', '#E6F7FF', '#1890FF', 'TimeAttackPage')
+          this.PracticeItem('随身听', '磨耳朵，自动播放', '#F9F0FF', '#722ED1', 'PodcastPage') // 新增
+          this.PracticeItem('拼写挑战', '根据释义拼写单词', '#E6F7FF', '#0A59F7', 'SpellChallengePage')
         }
         .width('100%')
         .padding({ left: 16, right: 16, bottom: 40 })

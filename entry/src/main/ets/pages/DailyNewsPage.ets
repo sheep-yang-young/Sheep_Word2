@@ -28,30 +28,18 @@ export struct DailyNewsPage {
   build() {
     NavDestination() {
       Column() {
-        // --- 标题栏 ---
+        // --- [修复] 顶部栏：标准样式 ---
         Row() {
-          Image($r('sys.media.ohos_ic_public_arrow_left'))
-            .width(24).height(24)
-            .onClick(() => this.pageStack.pop())
-          Text('China Daily News')
-            .fontSize(20).fontWeight(FontWeight.Bold).margin({ left: 12 })
-          Blank()
-
-          // [修复] 将 Image 图标改为 Text 按钮，避免资源丢失错误
-          Text('Refresh')
-            .fontSize(14)
-            .fontColor('#0A59F7')
-            .fontWeight(FontWeight.Medium)
-            .onClick(() => this.fetchNews())
-            .padding(8)
-        }
-        .width('100%').padding(16).backgroundColor(Color.White)
+          Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([Color.Black]) }
+          .backgroundColor(Color.Transparent).width(48).height(48).onClick(() => this.pageStack.pop())
+          Text('每日新闻').fontSize(20).fontWeight(FontWeight.Bold).margin({ left: 4 })
+        }.width('100%').padding({ top: 56, left: 16, right: 16, bottom: 10 }).alignItems(VerticalAlign.Center)
 
         // --- 内容区域 ---
         if (this.isLoading) {
           Column() {
             LoadingProgress().width(50).height(50).color('#0A59F7')
-            Text('Updating from China Daily...').fontSize(14).fontColor('#999').margin({ top: 10 })
+            Text('Updating...').fontSize(14).fontColor('#999').margin({ top: 10 })
           }.layoutWeight(1).justifyContent(FlexAlign.Center)
 
         } else if (this.isError) {
@@ -67,34 +55,15 @@ export struct DailyNewsPage {
               ListItem() {
                 Column({ space: 10 }) {
                   if (item.picUrl) {
-                    Image(item.picUrl)
-                      .width('100%')
-                      .height(180)
-                      .borderRadius(12)
-                      .objectFit(ImageFit.Cover)
-                      .backgroundColor('#F5F5F5')
+                    Image(item.picUrl).width('100%').height(180).borderRadius(12).objectFit(ImageFit.Cover).backgroundColor('#F5F5F5')
                   }
-
-                  Text(item.title)
-                    .fontSize(18)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor('#1A1A1A')
-                    .lineHeight(24)
-
-                  Text(item.description)
-                    .fontSize(14)
-                    .fontColor('#666')
-                    .lineHeight(20)
-                    .maxLines(3)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-
+                  Text(item.title || 'No Title').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#1A1A1A').lineHeight(24)
+                  Text(item.description || 'No Description').fontSize(14).fontColor('#666').lineHeight(20).maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis })
                   Row() {
-                    Text(item.source).fontSize(12).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
+                    Text(item.source || 'China Daily').fontSize(12).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
                     Blank()
                     Text(item.date).fontSize(12).fontColor('#999')
-                  }
-                  .width('100%')
-                  .margin({ top: 4 })
+                  }.width('100%').margin({ top: 4 })
                 }
                 .padding(16)
                 .backgroundColor(Color.White)
@@ -104,7 +73,6 @@ export struct DailyNewsPage {
               }
               .onClick(() => {
                 if (item.url) {
-                  // 跳转到 NewsWebPage，并传递 URL 参数
                   this.pageStack.pushPath({ name: 'NewsWebPage', param: item.url });
                 } else {
                   promptAction.showToast({ message: '无效的链接' });

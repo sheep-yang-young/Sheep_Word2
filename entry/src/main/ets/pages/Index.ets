@@ -18,6 +18,8 @@ import { DailyNewsPage } from './DailyNewsPage';
 import { SimpleLineChart, CleanCard } from '../components/CustomComponents';
 import { PreferenceManager } from '../utils/PreferenceManager';
 import { NewsWebPage } from './NewsWebPage';
+import { PodcastPage } from './PodcastPage';
+import { CustomImportPage } from './CustomImportPage';
 import { promptAction } from '@kit.ArkUI';
 
 @Entry
@@ -72,6 +74,8 @@ struct Index {
     else if (name === 'TimeAttackPage') { TimeAttackPage() }
     else if (name === 'DailyNewsPage') { DailyNewsPage() }
     else if (name === 'NewsWebPage') { NewsWebPage() }
+    if (name === 'PodcastPage') { PodcastPage() }
+    else if (name === 'CustomImportPage') { CustomImportPage() }
   }
 
   build() {
@@ -395,7 +399,7 @@ struct HomePage {
       }
       .tabBar(this.TabBuilder('档案', 2, $r('sys.symbol.doc_plaintext')))
     }
-    .scrollable(false).barHeight(60).onChange((index) => { this.currentIndex = index; this.refreshStats(); })
+    .scrollable(false).barHeight(75).onChange((index) => { this.currentIndex = index; this.refreshStats(); })
   }
 
   @Builder TabBuilder(title: string, targetIndex: number, icon: Resource) {
@@ -406,7 +410,7 @@ struct HomePage {
         .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, this.currentIndex === targetIndex ? 1 : 0))
       Text(title).fontSize(10).fontColor(this.currentIndex === targetIndex ? '#0A59F7' : '#999').margin({ top: 4 })
     }
-    .width('100%').height('100%').justifyContent(FlexAlign.Center)
+    .width('100%').height('100%').justifyContent(FlexAlign.Center).offset({ y: -5 })
   }
 
   @Builder QuickActionCard(title: string, sub: string, color: string, icon: Resource, action: () => void) {

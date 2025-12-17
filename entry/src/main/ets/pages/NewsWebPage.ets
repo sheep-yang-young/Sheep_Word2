@@ -11,27 +11,11 @@ export struct NewsWebPage {
     NavDestination() {
       Column() {
         Row() {
-          Image($r('sys.media.ohos_ic_public_arrow_left'))
-            .width(24).height(24)
-            .onClick(() => {
-              if (this.webviewController.accessBackward()) {
-                this.webviewController.backward();
-              } else {
-                this.pageStack.pop();
-              }
-            })
-          Text('新闻详情')
-            .fontSize(18).fontWeight(FontWeight.Bold).margin({ left: 12 })
-          Blank()
-
-          // [修复] 将 Image 改为 SymbolGlyph，避免资源报错
-          SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-            .fontSize(24)
-            .fontColor(['#333'])
-            .onClick(() => this.webviewController.refresh())
+          Button({ type: ButtonType.Circle }) {
+            SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([Color.Black])
+          }
+          .backgroundColor(Color.Transparent).width(48).height(48).onClick(() => this.pageStack.pop())
         }
-        .width('100%').padding(16).backgroundColor(Color.White)
-        .border({ width: { bottom: 1 }, color: '#E5E7EB' })
 
         Stack() {
           Web({ src: this.url, controller: this.webviewController })

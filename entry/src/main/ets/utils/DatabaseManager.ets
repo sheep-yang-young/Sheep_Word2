@@ -109,7 +109,46 @@ export class DatabaseManager {
     }
   }
 
-  // --- [补回] 核心：万能随机取词 (用于 MatchPairsPage, ZenPage 等) ---
+  // --- [新增] 单个单词插入 (用于自定义导入) ---
+  async addWord(word: Word): Promise<number> {
+    const s = this.rdbStore;
+    if (!s) return 0;
+    try {
+      // 查重：同一本词书下不允许重复单词
+      const p = new relationalStore.RdbPredicates('words');
+      p.equalTo('book_id', word.bookId).and().equalTo('spelling', word.spelling);
+      const r = await s.query(p);
+      if (r.rowCount > 0) {
+        r.close();
+        return 0; // 已存在，跳过
+      }
+      r.close();
+
+      const v: ValuesBucket = {
+        book_id: word.bookId,
+        spelling: word.spelling,
+        phonetic: word.phonetic || '',
+        meaning: word.meaning || '',
+        example: word.example || '',
+        note: word.note || '',
+        roots: this.serializeArray(word.roots),
+        affixes: this.serializeArray(word.affixes),
+        collocations: this.serializeArray(word.collocations),
+        synonyms: this.serializeArray(word.synonyms),
+        antonyms: this.serializeArray(word.antonyms),
+        derivatives: this.serializeArray(word.derivatives),
+        senses: this.serializeArray(word.senses),
+        knowledgeScore: word.knowledgeScore ?? 0,
+        proficiency: 0, repetition: 0, interval: 0, easeFactor: 2.5, lastReviewTime: 0, nextReviewTime: 0,
+        proficiencySpelling: 0, repetitionSpelling: 0, intervalSpelling: 0, easeFactorSpelling: 2.5, lastReviewTimeSpelling: 0, nextReviewTimeSpelling: 0
+      };
+      return await s.insert('words', v);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  // --- 核心：万能随机取词 ---
   async getRandomWords(bookId: string, limit: number = 20): Promise<Word[]> {
     const s = this.rdbStore;
     if (!s) return [];
@@ -141,7 +180,7 @@ export class DatabaseManager {
     } catch (e) { return []; }
   }
 
-  // --- [补回] 搜索功能 (用于 VocabularyPage) ---
+  // --- 搜索功能 ---
   async searchWords(bookId: string, k: string, m: number = 0): Promise<Word[]> {
     const s=this.rdbStore;
     if(!s)return[];
