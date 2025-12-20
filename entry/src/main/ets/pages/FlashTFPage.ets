@@ -48,7 +48,7 @@ export struct FlashTFPage {
           Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([Color.Black]) }
           .backgroundColor(Color.Transparent).width(48).height(48).onClick(() => this.pageStack.pop())
           Text('闪卡判断').fontSize(20).fontWeight(FontWeight.Bold).margin({ left: 4 })
-        }.width('100%').padding({ top: 56, left: 16, right: 16, bottom: 10 }).alignItems(VerticalAlign.Center)
+        }.width('100%').padding({ top: 40, left: 16, right: 16, bottom: 10 }).alignItems(VerticalAlign.Center)
 
         if (this.words.length > 0) {
           Column({ space: 30 }) {

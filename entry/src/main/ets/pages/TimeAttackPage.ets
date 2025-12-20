@@ -178,7 +178,7 @@ export struct TimeAttackPage {
           Blank()
           Button('重开').type(ButtonType.Normal).size({ width: 72, height: 38 }).onClick(() => this.restartGame())
           Text(`${this.timeLeft}s`).fontSize(20).fontColor('#FF4D4F').fontWeight(FontWeight.Bold)
-        }.width('100%').padding({ top: 56, left: 16, right: 16, bottom: 10 }).alignItems(VerticalAlign.Center)
+        }.width('100%').padding({ top: 40, left: 16, right: 16, bottom: 10 }).alignItems(VerticalAlign.Center)
 
         if (!this.isGameOver && !this.isWordPoolExhausted && this.words.length > 0 && this.currentIndex < this.words.length) {
           Column({ space: 20 }) {

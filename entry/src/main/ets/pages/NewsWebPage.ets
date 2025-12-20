@@ -11,11 +11,10 @@ export struct NewsWebPage {
     NavDestination() {
       Column() {
         Row() {
-          Button({ type: ButtonType.Circle }) {
-            SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([Color.Black])
-          }
+          Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([Color.Black]) }
           .backgroundColor(Color.Transparent).width(48).height(48).onClick(() => this.pageStack.pop())
-        }
+          Text('China Daily').fontSize(20).fontWeight(FontWeight.Bold).margin({ left: 4 })
+        }.width('100%').padding({ top: 40, left: 16, right: 16, bottom: 10 }).alignItems(VerticalAlign.Center)
 
         Stack() {
           Web({ src: this.url, controller: this.webviewController })

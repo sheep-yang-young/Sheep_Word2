@@ -223,6 +223,27 @@ export struct ReviewPage {
 
     const result = Sm2Algorithm.calculate(calcWord, grade);
 
+    // --- [修复开始] 同步更新内存中的 currentWord 状态 ---
+    // 计算新的熟练度，逻辑需与 DatabaseManager 保持一致
+    let newProficiency = Math.min(100, Math.round((result.interval / 21) * 100));
+    // 避免 repetition > 0 (复习过) 但熟练度为 0 的情况
+    if (result.repetition > 0 && newProficiency < 5) newProficiency = 5;
+
+    if (this.reviewMode === 1) {
+      // 拼写模式更新
+      currentWord.intervalSpelling = result.interval;
+      currentWord.repetitionSpelling = result.repetition;
+      currentWord.easeFactorSpelling = result.easeFactor;
+      currentWord.proficiencySpelling = newProficiency;
+    } else {
+      // 认知模式更新
+      currentWord.interval = result.interval;
+      currentWord.repetition = result.repetition;
+      currentWord.easeFactor = result.easeFactor;
+      currentWord.proficiency = newProficiency;
+    }
+    // --- [修复结束] ---
+
     if (currentWord.id !== undefined) {
       await DatabaseManager.getInstance().updateWordStats(
         currentWord.id,

@@ -1,17 +1,54 @@
 @Component
 export struct SimpleLineChart {
   @Prop data: number[];
-  private settings: RenderingContextSettings = new RenderingContextSettings(true);
-  private context: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
+
+  // 记录组件的实际宽高
+  @State chartWidth: number = 0;
+  @State chartHeight: number = 0;
 
   build() {
     Column() {
-      Canvas(this.context)
-        .width('100%')
-        .height('100%')
-        .onReady(() => {
-          this.drawChart();
+      // 使用 Stack 堆叠：背景填充层 -> 线条层 -> 数据点
+      Stack({ alignContent: Alignment.TopStart }) {
+        // [核心修复] 移除了外层的 if (width > 0) 判断
+        // 确保组件始终挂载在树上，这样才能正确响应 onAreaChange 和数据更新
+
+        // 1. 底部填充区域 (Polygon 自动闭合)
+        Polygon()
+          .points(this.getPointsArray(true))
+          .fill('rgba(10, 89, 247, 0.1)')
+          .width(this.chartWidth)
+          .height(this.chartHeight)
+
+        // 2. 折线 (Polyline 不闭合)
+        Polyline()
+          .points(this.getPointsArray(false))
+          .stroke('#0A59F7')
+          .strokeWidth(3)
+          .fill('none') // 不填充，只画线
+          .strokeLineCap(LineCapStyle.Round)
+          .strokeLineJoin(LineJoinStyle.Round)
+          .width(this.chartWidth)
+          .height(this.chartHeight)
+
+        // 3. 数据点 (圆圈)
+        ForEach(this.data, (val: number, index: number) => {
+          Circle({ width: 6, height: 6 })
+            .fill('#0A59F7')
+            .position({
+              x: this.getX(index) - 3,
+              y: this.getY(val) - 3
+            })
         })
+      }
+      .width('100%')
+      .height('100%')
+      // 监听组件尺寸变化，动态更新绘图坐标
+      .onAreaChange((oldArea: Area, newArea: Area) => {
+        // 加一个简单的防抖或直接更新
+        this.chartWidth = newArea.width as number;
+        this.chartHeight = newArea.height as number;
+      })
     }
     .width('100%')
     .height(150)
@@ -19,48 +56,47 @@ export struct SimpleLineChart {
     .borderRadius(16)
   }
 
-  drawChart(): void {
-    const ctx = this.context;
-    const width = ctx.width;
-    const height = ctx.height;
+  // --- 坐标计算辅助函数 ---
+
+  getX(index: number): number {
+    if (this.chartWidth <= 0) return 0; // 安全检查
     const padding = 10;
+    const availableWidth = this.chartWidth - padding * 2;
+    const step = this.data.length > 1 ? availableWidth / (this.data.length - 1) : 0;
 
-    ctx.clearRect(0, 0, width, height);
+    if (this.data.length <= 1) return this.chartWidth / 2;
+    return padding + index * step;
+  }
 
-    if (!this.data || this.data.length === 0) return;
-
+  getY(value: number): number {
+    if (this.chartHeight <= 0) return 0; // 安全检查
+    const padding = 10;
+    const availableHeight = this.chartHeight - padding * 2;
     const maxVal = Math.max(...this.data, 5);
-    const stepX = (width - padding * 2) / (this.data.length > 1 ? this.data.length - 1 : 1);
-    const scaleY = (height - padding * 2) / maxVal;
+    const scale = availableHeight / maxVal;
 
-    ctx.beginPath();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#0A59F7';
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    return this.chartHeight - padding - (value * scale);
+  }
+
+  getPointsArray(closeShape: boolean): Array<[number, number]> {
+    // [核心修复] 如果宽高无效，返回空数组，避免报错
+    if (this.chartWidth <= 0 || this.chartHeight <= 0) {
+      return [];
+    }
+
+    let points: Array<[number, number]> = [];
 
     this.data.forEach((val, index) => {
-      const x = padding + index * stepX;
-      const y = height - padding - (val * scaleY);
-      if (index === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      points.push([this.getX(index), this.getY(val)]);
     });
-    ctx.stroke();
 
-    ctx.lineTo(width - padding, height - padding);
-    ctx.lineTo(padding, height - padding);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(10, 89, 247, 0.1)';
-    ctx.fill();
+    if (closeShape && points.length > 0) {
+      const padding = 10;
+      points.push([this.chartWidth - padding, this.chartHeight - padding]);
+      points.push([padding, this.chartHeight - padding]);
+    }
 
-    ctx.fillStyle = '#0A59F7';
-    this.data.forEach((val, index) => {
-      const x = padding + index * stepX;
-      const y = height - padding - (val * scaleY);
-      ctx.beginPath();
-      ctx.arc(x, y, 3, 0, 6.28);
-      ctx.fill();
-    });
+    return points;
   }
 }
 
