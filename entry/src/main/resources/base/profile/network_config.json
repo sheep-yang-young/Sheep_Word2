@@ -1,0 +1,17 @@
+{
+  "network-security-config": {
+    "domain-config": [
+      {
+        "domains": [
+          {
+            "include-subdomains": true,
+            "name": "8.134.10.55"
+          }
+        ],
+        "domain-config": {
+          "cleartextTrafficPermitted": true
+        }
+      }
+    ]
+  }
+}

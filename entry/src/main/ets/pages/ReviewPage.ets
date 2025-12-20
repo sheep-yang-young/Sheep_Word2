@@ -2,11 +2,12 @@ import { DatabaseManager } from '../utils/DatabaseManager';
 import { Word } from '../model/WordModel';
 import { Sm2Algorithm, ReviewGrade } from '../utils/Sm2Algorithm';
 import { CleanCard } from '../components/CustomComponents';
-import { media } from '@kit.MediaKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
 import { vibrator } from '@kit.SensorServiceKit';
+// [新增] 引入鸿蒙原生语音库
+import { textToSpeech } from '@kit.CoreSpeechKit';
 
 @Component
 export struct ReviewPage {
@@ -34,8 +35,13 @@ export struct ReviewPage {
 
   @State cardAngle: number = 0;
 
-  private avPlayer: media.AVPlayer | null = null;
-  private accentType: number = 2;
+  // [新增] 编程模式状态
+  @State isCodeMode: boolean = false;
+  // [新增] 语音状态防止连点
+  @State isSpeaking: boolean = false;
+
+  // [修改] 替换 AVPlayer 为 TTS 引擎
+  private ttsEngine: textToSpeech.TextToSpeechEngine | null = null;
   private isHapticOn: boolean = true;
   private ttsSpeed: number = 1.0;
   private currentBookId: string = "Default Library";
@@ -51,14 +57,18 @@ export struct ReviewPage {
   });
 
   async aboutToAppear(): Promise<void> {
-    await this.initAudioPlayer();
+    // [修改] 初始化 TTS 而不是 AVPlayer
+    await this.initTTS();
+
     const prefs = PreferenceManager.getInstance();
     const limit = await prefs.getDailyLimit();
-    this.accentType = await prefs.getAccentType();
     this.isHapticOn = await prefs.isHapticEnabled();
     this.reviewMode = await prefs.getReviewMode();
     this.ttsSpeed = await prefs.getTtsSpeed();
     this.currentBookId = await prefs.getCurrentBook();
+
+    // [新增] 读取编程模式开关
+    this.isCodeMode = await prefs.isProgrammingMode();
 
     this.words = await DatabaseManager.getInstance().getTodayWordList(this.currentBookId, limit, this.reviewMode);
     this.isLoading = false;
@@ -68,6 +78,71 @@ export struct ReviewPage {
     } else {
       this.loadCurrentWord();
     }
+  }
+
+  // [新增] 初始化鸿蒙原生 TTS 引擎
+  async initTTS() {
+    try {
+      // 创建引擎，设置语言为美式英语
+      this.ttsEngine = await textToSpeech.createEngine({
+        language: 'en-US',
+        person: 0,
+        online: 1, // 优先离线，支持在线
+        extraParams: { "style": "interaction-broadcast" }
+      });
+      console.info('[ReviewPage] TTS Engine Created');
+    } catch (err) {
+      console.error(`[ReviewPage] TTS Init Failed: ${JSON.stringify(err)}`);
+    }
+  }
+
+  // [修改] 使用 TTS 播放
+  async playWord(text: string): Promise<void> {
+    if (!this.ttsEngine || this.isSpeaking) return;
+
+    // 编程模式下，默认不自动朗读 API 名称，除非用户点击喇叭
+    // 这里我们允许它读，或者你可以加 if (this.isCodeMode) return;
+
+    this.isSpeaking = true;
+    try {
+      let speakParams: textToSpeech.SpeakParams = {
+        requestId: Date.now().toString(),
+        extraParams: {
+          "speed": this.ttsSpeed * 50, // 鸿蒙标准速度是 50
+          "volume": 100,
+          "pitch": 50,
+          "audioType": "pcm"
+        }
+      };
+
+      // 设置监听以重置 isSpeaking 状态
+      this.ttsEngine.setListener({
+        // 开始播放
+        onStart: (requestId: string) => { console.info('TTS Start'); },
+        // 播放完成
+        onComplete: (requestId: string) => { this.isSpeaking = false; },
+        // 播放停止（被打断）
+        onStop: (requestId: string) => { this.isSpeaking = false; },
+        // 播放出错
+        onError: (requestId: string, errorCode: number, errorMessage: string) => {
+          console.error(`TTS Error ${errorCode}: ${errorMessage}`);
+          this.isSpeaking = false;
+        }
+      });
+
+      await this.ttsEngine.speak(text, speakParams);
+    } catch (e) {
+      console.error(`[ReviewPage] Speak Error: ${JSON.stringify(e)}`);
+      this.isSpeaking = false;
+    }
+  }
+
+  // [修改] 页面销毁时释放 TTS
+  aboutToDisappear(): void {
+    if (this.ttsEngine) {
+      this.ttsEngine.shutdown();
+    }
+    this.refreshFlag++;
   }
 
   loadCurrentWord(): void {
@@ -81,7 +156,8 @@ export struct ReviewPage {
       this.generateHint(word.spelling);
       this.prepareScenario(word);
 
-      if (this.reviewMode === 0) this.playWord(word.spelling);
+      // 如果不是拼写模式，自动发音（编程模式下也许可以关掉自动发音，这里保留）
+      if (this.reviewMode === 0 && !this.isCodeMode) this.playWord(word.spelling);
     }
   }
 
@@ -117,7 +193,6 @@ export struct ReviewPage {
   }
 
   shuffleArray(list: string[]): string[] {
-    // [修复] 不使用 [...list]，改为 .slice() 来复制数组
     const arr = list.slice();
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -137,21 +212,6 @@ export struct ReviewPage {
     if (currentWord && currentWord.id !== undefined) {
       await DatabaseManager.getInstance().recordKnowledgePractice(currentWord.id, isCorrect);
     }
-  }
-
-  aboutToDisappear(): void { if (this.avPlayer) this.avPlayer.release(); this.refreshFlag++; }
-  async initAudioPlayer(): Promise<void> { try { this.avPlayer = await media.createAVPlayer(); } catch (e) {} }
-
-  async playWord(text: string): Promise<void> {
-    if (!this.avPlayer) return;
-    try {
-      await this.avPlayer.reset();
-      this.avPlayer.url = `https://dict.youdao.com/dictvoice?audio=${text}&type=${this.accentType}`;
-      this.avPlayer.on('stateChange', async (state: string) => {
-        if (state === 'initialized') await this.avPlayer?.prepare();
-        else if (state === 'prepared') { await this.avPlayer?.setSpeed(this.ttsSpeed); await this.avPlayer?.play(); }
-      });
-    } catch (e) {}
   }
 
   triggerHaptic(grade: ReviewGrade): void { if (!this.isHapticOn) return; try { let duration = 30; if (grade === ReviewGrade.AGAIN) duration = 80; vibrator.startVibration({ type: 'time', duration: duration }, { id: 0, usage: 'touch' }); } catch (e) {} }
@@ -178,8 +238,6 @@ export struct ReviewPage {
     this.triggerHaptic(grade);
     const currentWord = this.words[this.currentIndex];
 
-    // [修复] ArkTS 不支持对象展开 {...currentWord}。
-    // 手动创建一个用于计算的临时对象
     let calcWord: Word = {
       id: currentWord.id,
       bookId: currentWord.bookId,
@@ -196,16 +254,12 @@ export struct ReviewPage {
       derivatives: currentWord.derivatives,
       senses: currentWord.senses,
       knowledgeScore: currentWord.knowledgeScore,
-
-      // 默认使用认知字段
       proficiency: currentWord.proficiency,
       repetition: currentWord.repetition,
       interval: currentWord.interval,
       easeFactor: currentWord.easeFactor,
       lastReviewTime: currentWord.lastReviewTime,
       nextReviewTime: currentWord.nextReviewTime,
-
-      // 拼写字段
       proficiencySpelling: currentWord.proficiencySpelling,
       repetitionSpelling: currentWord.repetitionSpelling,
       intervalSpelling: currentWord.intervalSpelling,
@@ -215,34 +269,12 @@ export struct ReviewPage {
     };
 
     if (this.reviewMode === 1) {
-      // 如果是拼写模式，覆盖主要复习字段为拼写字段，供 Sm2Algorithm 使用
       calcWord.interval = currentWord.intervalSpelling || 0;
       calcWord.repetition = currentWord.repetitionSpelling || 0;
       calcWord.easeFactor = currentWord.easeFactorSpelling || 2.5;
     }
 
     const result = Sm2Algorithm.calculate(calcWord, grade);
-
-    // --- [修复开始] 同步更新内存中的 currentWord 状态 ---
-    // 计算新的熟练度，逻辑需与 DatabaseManager 保持一致
-    let newProficiency = Math.min(100, Math.round((result.interval / 21) * 100));
-    // 避免 repetition > 0 (复习过) 但熟练度为 0 的情况
-    if (result.repetition > 0 && newProficiency < 5) newProficiency = 5;
-
-    if (this.reviewMode === 1) {
-      // 拼写模式更新
-      currentWord.intervalSpelling = result.interval;
-      currentWord.repetitionSpelling = result.repetition;
-      currentWord.easeFactorSpelling = result.easeFactor;
-      currentWord.proficiencySpelling = newProficiency;
-    } else {
-      // 认知模式更新
-      currentWord.interval = result.interval;
-      currentWord.repetition = result.repetition;
-      currentWord.easeFactor = result.easeFactor;
-      currentWord.proficiency = newProficiency;
-    }
-    // --- [修复结束] ---
 
     if (currentWord.id !== undefined) {
       await DatabaseManager.getInstance().updateWordStats(
@@ -286,53 +318,131 @@ export struct ReviewPage {
           Column() {
             CleanCard() {
               Stack() {
+                // === 卡片正面 (Front) ===
                 if (this.cardAngle < 90) {
                   Column() {
-                    if (this.reviewMode === 1) {
-                      Column({ space: 16 }) { Text(this.hintText).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#0A59F7').letterSpacing(2).margin({ top: 30 }); TextInput({ placeholder: 'Type the word...', text: this.userInput }).height(56).fontSize(20).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center).fontColor(this.isSpellingCorrect === false ? '#FF4D4F' : '#1A1A1A').onChange((val) => { this.userInput = val; this.isSpellingCorrect = null; }).onSubmit(() => { this.checkSpelling() }); Button('Check').backgroundColor('#F0F2F5').fontColor('#333').height(40).onClick(() => { this.checkSpelling() }) }
+                    if (this.isCodeMode) {
+                      // --- 极客编程模式 (Front) ---
+                      Column() {
+                        Text(this.words[this.currentIndex].spelling)
+                          .fontFamily('Monospace') // 代码字体
+                          .fontSize(20)
+                          .fontWeight(FontWeight.Regular)
+                          .fontColor('#D4D4D4') // VSCode 浅灰
+                          .width('100%')
+                      }
+                      .width('90%')
+                      .padding(20)
+                      .backgroundColor('#1E1E1E') // VSCode 深灰背景
+                      .borderRadius(6)
+                      .margin({ top: 60 })
+                      .alignItems(HorizontalAlign.Start)
+                      .shadow({ radius: 0 }) // 扁平化设计
+
+                      Text('Use Case / API Signature')
+                        .fontSize(12)
+                        .fontColor('#666')
+                        .margin({ top: 12 })
+                        .fontFamily('Monospace')
                     } else {
-                      Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(36).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(36).height(36).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 40 }).alignItems(VerticalAlign.Center)
+                      // --- 正常英语模式 (Front) ---
+                      if (this.reviewMode === 1) {
+                        Column({ space: 16 }) { Text(this.hintText).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#0A59F7').letterSpacing(2).margin({ top: 30 }); TextInput({ placeholder: 'Type the word...', text: this.userInput }).height(56).fontSize(20).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center).fontColor(this.isSpellingCorrect === false ? '#FF4D4F' : '#1A1A1A').onChange((val) => { this.userInput = val; this.isSpellingCorrect = null; }).onSubmit(() => { this.checkSpelling() }); Button('Check').backgroundColor('#F0F2F5').fontColor('#333').height(40).onClick(() => { this.checkSpelling() }) }
+                      } else {
+                        Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(36).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(36).height(36).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 40 }).alignItems(VerticalAlign.Center)
+                      }
+                      if (this.words[this.currentIndex].phonetic) Text(this.words[this.currentIndex].phonetic).fontSize(18).fontColor('#888').margin({ top: 10 })
+                      if (this.reviewMode === 0 && this.scenarioOptions.length > 0) {
+                        Column({ space: 8 }) {
+                          Text('多义场景选择题').fontSize(14).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
+                          Text(this.scenarioQuestion).fontSize(14).fontColor('#555').textAlign(TextAlign.Center).margin({ bottom: 4 })
+                          ForEach(this.scenarioOptions, (option: string, index?: number) => {
+                            Button(option).width('100%').height(40).backgroundColor('#F5F7FA').fontColor('#1A1A1A').border({ width: 1, color: '#E5E7EB' }).onClick(() => { this.selectScenarioOption(option) }).enabled(!this.scenarioAnswered)
+                          }, (option: string, index?: number) => `${option}-${index}`)
+                          if (this.scenarioFeedback) Text(this.scenarioFeedback).fontSize(12).fontColor(this.scenarioFeedback.includes('正确答案') ? '#FF4D4F' : '#10B981')
+                        }.width('100%').padding({ left: 8, right: 8, top: 10 }).backgroundColor('#F8FAFF').borderRadius(12).margin({ top: 16 })
+                      }
                     }
-                    if (this.words[this.currentIndex].phonetic) Text(this.words[this.currentIndex].phonetic).fontSize(18).fontColor('#888').margin({ top: 10 })
-                    if (this.reviewMode === 0 && this.scenarioOptions.length > 0) {
-                      Column({ space: 8 }) {
-                        Text('多义场景选择题').fontSize(14).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
-                        Text(this.scenarioQuestion).fontSize(14).fontColor('#555').textAlign(TextAlign.Center).margin({ bottom: 4 })
-                        ForEach(this.scenarioOptions, (option: string, index?: number) => {
-                          Button(option).width('100%').height(40).backgroundColor('#F5F7FA').fontColor('#1A1A1A').border({ width: 1, color: '#E5E7EB' }).onClick(() => { this.selectScenarioOption(option) }).enabled(!this.scenarioAnswered)
-                        }, (option: string, index?: number) => `${option}-${index}`)
-                        if (this.scenarioFeedback) Text(this.scenarioFeedback).fontSize(12).fontColor(this.scenarioFeedback.includes('正确答案') ? '#FF4D4F' : '#10B981')
-                      }.width('100%').padding({ left: 8, right: 8, top: 10 }).backgroundColor('#F8FAFF').borderRadius(12).margin({ top: 16 })
+
+                    // 点击翻转区域
+                    if (this.reviewMode === 0) {
+                      Column() {
+                        Text(this.isCodeMode ? '> 查看实现 (View Impl)' : 'Tap to Show Answer')
+                          .fontSize(16)
+                          .fontColor('#BBB')
+                          .fontFamily(this.isCodeMode ? 'Monospace' : '')
+                      }
+                      .height(200).justifyContent(FlexAlign.Center).width('100%')
+                      .onClick(() => {
+                        this.showAnswerWithFlip();
+                        if (!this.isCodeMode) this.playWord(this.words[this.currentIndex].spelling);
+                      })
                     }
-                    if (this.reviewMode === 0) Column() { Text('Tap to Show Answer').fontSize(16).fontColor('#BBB') }.height(200).justifyContent(FlexAlign.Center).width('100%').onClick(() => { this.showAnswerWithFlip(); this.playWord(this.words[this.currentIndex].spelling); })
                   }.width('100%').height('65%')
                 }
+                // === 卡片背面 (Back) ===
                 else {
                   Column() {
-                    Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(32).height(32).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 20 })
-                    Divider().color('#EEE').width('40%').margin({ top: 20, bottom: 20 })
-                    Scroll() { Column({ space: 10 }) {
-                      Text(this.words[this.currentIndex].meaning).fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center);
-                      if (this.words[this.currentIndex].example) Text(this.words[this.currentIndex].example).fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic).textAlign(TextAlign.Center).margin({ top: 10 });
+                    if (this.isCodeMode) {
+                      // --- 极客编程模式 (Back) ---
+                      Column() {
+                        // 标题 (API Name)
+                        Text(this.words[this.currentIndex].spelling)
+                          .fontSize(24).fontWeight(FontWeight.Bold).fontColor('#0A59F7').fontFamily('Monospace').margin({ top: 20 })
 
-                      // [修复] 使用 .concat 替代 [...a, ...b] 展开
-                      if ((this.words[this.currentIndex].roots && this.words[this.currentIndex].roots!.length > 0) || (this.words[this.currentIndex].affixes && this.words[this.currentIndex].affixes!.length > 0)) {
-                        this.KnowledgeChips('词根词缀卡', (this.words[this.currentIndex].roots || []).concat(this.words[this.currentIndex].affixes || []), '#EEF2FF');
-                      }
+                        Divider().color('#EEE').width('90%').margin({ top: 15, bottom: 15 })
 
-                      if (this.words[this.currentIndex].collocations && this.words[this.currentIndex].collocations!.length > 0) this.CollocationPractice(this.words[this.currentIndex].collocations!);
+                        // 解释 (Description)
+                        Text(this.words[this.currentIndex].meaning)
+                          .fontSize(16).fontColor('#333').textAlign(TextAlign.Start).width('90%').lineHeight(24)
 
-                      if (this.words[this.currentIndex].derivatives && this.words[this.currentIndex].derivatives!.length > 0) this.KnowledgeChips('词族树', this.words[this.currentIndex].derivatives, '#F0FDF4');
+                        // 代码示例区 (Code Snippet)
+                        if (this.words[this.currentIndex].example) {
+                          Column() {
+                            Text(this.words[this.currentIndex].example)
+                              .fontColor('#A9B7C6') // 代码灰
+                              .fontSize(14)
+                              .fontFamily('Monospace')
+                          }
+                          .width('90%')
+                          .padding(12)
+                          .backgroundColor('#2B2B2B') // 代码背景
+                          .borderRadius(8)
+                          .margin({ top: 16 })
+                          .alignItems(HorizontalAlign.Start)
+                        }
 
-                      // [修复] 使用 .concat 替代展开
-                      if (this.words[this.currentIndex].synonyms && this.words[this.currentIndex].synonyms!.length > 0) {
-                        this.KnowledgeChips('同义/反义', (this.words[this.currentIndex].synonyms || []).concat(this.words[this.currentIndex].antonyms || []), '#F8FAFC');
-                      }
+                        // 笔记/Tags
+                        if (this.words[this.currentIndex].note) {
+                          Text(`// ${this.words[this.currentIndex].note}`)
+                            .fontSize(12).fontColor('#6A9955').fontFamily('Monospace').margin({ top: 10 }).width('90%')
+                        }
+                      }.width('100%')
+                    } else {
+                      // --- 正常英语模式 (Back) ---
+                      Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(32).height(32).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 20 })
+                      Divider().color('#EEE').width('40%').margin({ top: 20, bottom: 20 })
+                      Scroll() { Column({ space: 10 }) {
+                        Text(this.words[this.currentIndex].meaning).fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center);
+                        if (this.words[this.currentIndex].example) Text(this.words[this.currentIndex].example).fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic).textAlign(TextAlign.Center).margin({ top: 10 });
 
-                      if (this.words[this.currentIndex].senses && this.words[this.currentIndex].senses!.length > 0) this.KnowledgeChips('多义解读', this.words[this.currentIndex].senses, '#FFF7ED');
+                        if ((this.words[this.currentIndex].roots && this.words[this.currentIndex].roots!.length > 0) || (this.words[this.currentIndex].affixes && this.words[this.currentIndex].affixes!.length > 0)) {
+                          this.KnowledgeChips('词根词缀卡', (this.words[this.currentIndex].roots || []).concat(this.words[this.currentIndex].affixes || []), '#EEF2FF');
+                        }
 
-                      if (this.currentNote) Column() { Text('NOTE').fontSize(10).fontColor('#0A59F7').fontWeight(FontWeight.Bold); Text(this.currentNote).fontSize(14).fontColor('#666').margin({ top: 4 }) }.width('100%').padding(12).backgroundColor('#F0F9FF').borderRadius(8).alignItems(HorizontalAlign.Start).margin({ top: 20 }).onClick(() => { this.noteController.open() })
-                    }.padding({ left: 20, right: 20 }) }.layoutWeight(1).scrollBar(BarState.Auto)
+                        if (this.words[this.currentIndex].collocations && this.words[this.currentIndex].collocations!.length > 0) this.CollocationPractice(this.words[this.currentIndex].collocations!);
+
+                        if (this.words[this.currentIndex].derivatives && this.words[this.currentIndex].derivatives!.length > 0) this.KnowledgeChips('词族树', this.words[this.currentIndex].derivatives, '#F0FDF4');
+
+                        if (this.words[this.currentIndex].synonyms && this.words[this.currentIndex].synonyms!.length > 0) {
+                          this.KnowledgeChips('同义/反义', (this.words[this.currentIndex].synonyms || []).concat(this.words[this.currentIndex].antonyms || []), '#F8FAFC');
+                        }
+
+                        if (this.words[this.currentIndex].senses && this.words[this.currentIndex].senses!.length > 0) this.KnowledgeChips('多义解读', this.words[this.currentIndex].senses, '#FFF7ED');
+
+                        if (this.currentNote) Column() { Text('NOTE').fontSize(10).fontColor('#0A59F7').fontWeight(FontWeight.Bold); Text(this.currentNote).fontSize(14).fontColor('#666').margin({ top: 4 }) }.width('100%').padding(12).backgroundColor('#F0F9FF').borderRadius(8).alignItems(HorizontalAlign.Start).margin({ top: 20 }).onClick(() => { this.noteController.open() })
+                      }.padding({ left: 20, right: 20 }) }.layoutWeight(1).scrollBar(BarState.Auto)
+                    }
                   }
                   .width('100%').height('65%')
                   .rotate({ x: 0, y: 1, z: 0, angle: 180 })
@@ -343,7 +453,7 @@ export struct ReviewPage {
           }.padding({ left: 20, right: 20, top: 30 }).layoutWeight(1)
 
           if (this.isAnswerShown) { Row({ space: 12 }) { this.ReviewButton('Again', '#FF4D4F', () => { this.submitReview(ReviewGrade.AGAIN) }); this.ReviewButton('Hard', '#FAAD14', () => { this.submitReview(ReviewGrade.HARD) }); this.ReviewButton('Good', '#0A59F7', () => { this.submitReview(ReviewGrade.GOOD) }); this.ReviewButton('Easy', '#10B981', () => { this.submitReview(ReviewGrade.EASY) }) }.padding({ bottom: 30, left: 16, right: 16 }) }
-          else { if (this.reviewMode === 0) Button('Show Answer').width('90%').height(56).backgroundColor('#0A59F7').fontSize(18).onClick(() => { this.showAnswerWithFlip(); this.playWord(this.words[this.currentIndex].spelling); }).margin({ bottom: 40 }); else Button('I don\'t know').width('90%').height(56).backgroundColor(Color.Transparent).fontColor('#999').fontSize(14).onClick(() => { this.showAnswerWithFlip(); this.playWord(this.words[this.currentIndex].spelling); }).margin({ bottom: 40 }) }
+          else { if (this.reviewMode === 0) Button('Show Answer').width('90%').height(56).backgroundColor('#0A59F7').fontSize(18).onClick(() => { this.showAnswerWithFlip(); if(!this.isCodeMode) this.playWord(this.words[this.currentIndex].spelling); }).margin({ bottom: 40 }); else Button('I don\'t know').width('90%').height(56).backgroundColor(Color.Transparent).fontColor('#999').fontSize(14).onClick(() => { this.showAnswerWithFlip(); if(!this.isCodeMode) this.playWord(this.words[this.currentIndex].spelling); }).margin({ bottom: 40 }) }
         }
       }.width('100%').height('100%').backgroundColor('#F5F7FA').padding({ top: 48 })
     }.hideTitleBar(true)

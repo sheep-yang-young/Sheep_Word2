@@ -21,6 +21,7 @@ import { NewsWebPage } from './NewsWebPage';
 import { PodcastPage } from './PodcastPage';
 import { CustomImportPage } from './CustomImportPage';
 import { promptAction } from '@kit.ArkUI';
+import { StorePage } from './StorePage';
 
 @Entry
 @Component
@@ -76,6 +77,8 @@ struct Index {
     else if (name === 'NewsWebPage') { NewsWebPage() }
     if (name === 'PodcastPage') { PodcastPage() }
     else if (name === 'CustomImportPage') { CustomImportPage() }
+    else if (name === 'StorePage') { StorePage() }
+
   }
 
   build() {

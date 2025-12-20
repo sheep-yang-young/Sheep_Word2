@@ -16,6 +16,9 @@ export struct SettingsPage {
   @State reviewMode: number = 0;
   @State ttsSpeed: number = 1.0;
 
+  // [新增] 极客模式状态
+  @State isCodeMode: boolean = false;
+
   private currentBook: string = "Default Library";
 
   async aboutToAppear(): Promise<void> {
@@ -28,6 +31,9 @@ export struct SettingsPage {
     this.reviewMode = await PreferenceManager.getInstance().getReviewMode();
     this.ttsSpeed = await PreferenceManager.getInstance().getTtsSpeed();
     this.currentBook = await PreferenceManager.getInstance().getCurrentBook();
+
+    // [新增] 读取极客模式状态
+    this.isCodeMode = await PreferenceManager.getInstance().isProgrammingMode();
   }
 
   async saveLimit(value: number): Promise<void> { this.dailyLimit = value; await PreferenceManager.getInstance().setDailyLimit(value); }
@@ -35,8 +41,6 @@ export struct SettingsPage {
   async saveHaptic(value: boolean): Promise<void> { this.isHapticOn = value; await PreferenceManager.getInstance().setHapticEnabled(value); }
   async saveReviewMode(value: number): Promise<void> { this.reviewMode = value; await PreferenceManager.getInstance().setReviewMode(value); }
   async saveTtsSpeed(value: number): Promise<void> { this.ttsSpeed = value; await PreferenceManager.getInstance().setTtsSpeed(value); }
-
-  // [已删除] handleLoadBuiltIn 方法已移除
 
   async handleImportJson(): Promise<void> {
     const count = await WordImporter.selectAndImportFile(getContext(this) as common.UIAbilityContext, this.currentBook);
@@ -97,6 +101,7 @@ export struct SettingsPage {
         .width('100%').padding(20)
 
         List({ space: 16 }) {
+          // === 1. 基础偏好 ===
           ListItem() {
             Column({ space: 16 }) {
               Text('学习偏好').fontSize(14).fontColor('#666').width('100%')
@@ -123,20 +128,54 @@ export struct SettingsPage {
             .padding(16).backgroundColor(Color.White).borderRadius(16)
           }
 
+          // === 2. [新增] 极客模式开关 ===
+          // 放在这里，作为单独的一个卡片，显眼且不报错
+          ListItem() {
+            Row() {
+              Column({ space: 4 }) {
+                Text('Code Mode / 极客模式')
+                  .fontSize(16)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor('#1A1A1A')
+                Text('启用代码高亮与编程题库')
+                  .fontSize(12)
+                  .fontColor('#999')
+              }.alignItems(HorizontalAlign.Start)
+
+              Toggle({ type: ToggleType.Switch, isOn: this.isCodeMode })
+                .selectedColor('#0A59F7')
+                .onChange(async (isOn: boolean) => {
+                  this.isCodeMode = isOn;
+                  await PreferenceManager.getInstance().setProgrammingMode(isOn);
+                  try {
+                    promptAction.showToast({
+                      message: isOn ? '> System.init(CodeMode)...' : '已切回英语模式'
+                    });
+                  } catch (e) {}
+                })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.SpaceBetween)
+            .padding(16)
+            .backgroundColor(Color.White)
+            .borderRadius(16)
+          }
+
+          // === 3. 数据管理 ===
           ListItem() {
             Column() {
               Text('数据管理').fontSize(14).fontColor('#666').width('100%').margin({ bottom: 8 })
 
-              // [修改] 已移除加载内置词库
               this.SettingsItem('导入 JSON 文件', $r('sys.media.ohos_ic_public_add'), () => { this.handleImportJson() })
               this.SettingsItem('导入 TXT 文件', $r('sys.media.ohos_ic_public_paste'), () => { this.handleImportTxt() })
               this.SettingsItem('导出数据备份', $r('sys.media.ohos_ic_public_share'), () => { this.handleExport() })
               this.SettingsItem('重置当前进度', $r('sys.media.ohos_ic_public_clock'), () => { this.handleResetProgress() }, '#FAAD14')
-                this.SettingsItem('修复数据库', $r('sys.media.ohos_ic_public_more'), () => { this.handleRebuildDatabase() }, '#0A59F7')
+              this.SettingsItem('修复数据库', $r('sys.media.ohos_ic_public_more'), () => { this.handleRebuildDatabase() }, '#0A59F7')
               this.SettingsItem('清空所有数据', $r('sys.media.ohos_ic_public_remove'), () => { this.handleClean() }, '#FF4D4F')
             }
           }
 
+          // === 4. 关于 ===
           ListItem() {
             Column() {
               Text('关于').fontSize(14).fontColor('#666').width('100%').margin({ bottom: 8 })

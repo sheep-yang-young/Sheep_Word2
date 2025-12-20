@@ -4,6 +4,7 @@
     "type": "entry",
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
+
     "deviceTypes": [
       "phone"
     ],
@@ -49,6 +50,12 @@
     "requestPermissions": [
       {
         "name": "ohos.permission.INTERNET"
+      }
+    ],
+    "metadata": [
+      {
+        "name": "network_security_config",
+        "resource": "$profile:network_config"
       }
     ]
   }

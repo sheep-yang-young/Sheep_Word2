@@ -10,6 +10,7 @@ const KEY_TTS_SPEED = 'tts_speed';
 const KEY_CURRENT_BOOK = 'current_book';
 const KEY_FIRST_LAUNCH = 'first_launch_v2'; // 升级key以确保老用户也能看到新引导
 const KEY_TIME_ATTACK_STATE = 'time_attack_state';
+const KEY_CODE_MODE = 'is_code_mode';
 
 export class PreferenceManager {
   private static instance: PreferenceManager;
@@ -76,4 +77,17 @@ export class PreferenceManager {
   }
 
   async clearTimeAttackState(): Promise<void> { if (!this.pref) return; await this.pref.delete(KEY_TIME_ATTACK_STATE); await this.pref.flush(); }
+  async isProgrammingMode(): Promise<boolean> {
+    // 必须判空，并调用 this.pref.get
+    if (!this.pref) return false;
+    return await this.pref.get('is_code_mode', false) as boolean;
+  }
+
+  // [修复] 设置编程模式状态
+  async setProgrammingMode(isEnabled: boolean): Promise<void> {
+    if (!this.pref) return;
+    // 必须调用 this.pref.put
+    await this.pref.put('is_code_mode', isEnabled);
+    await this.pref.flush(); // 别忘了刷盘保存
+  }
 }

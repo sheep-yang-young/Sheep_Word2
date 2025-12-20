@@ -3,7 +3,6 @@ import { common } from '@kit.AbilityKit';
 import { DatabaseManager } from './DatabaseManager';
 import { Word } from '../model/WordModel';
 import { util } from '@kit.ArkTS';
-import { BusinessError } from '@kit.BasicServicesKit';
 
 // 定义导入数据的接口
 interface RawImportItem {
@@ -24,9 +23,71 @@ interface RawImportItem {
   antonyms?: string[] | string;
   derivatives?: string[] | string;
   senses?: string[] | string;
+  // 移除 tags，保持极简
 }
 
 export class WordImporter {
+
+  /**
+   * [修复版] 从沙箱路径直接导入 JSON 文件 (供 StorePage 下载使用)
+   * 已移除不兼容的 tags 字段
+   */
+  static async importJsonFileFromPath(context: common.UIAbilityContext, filePath: string, bookName: string): Promise<number> {
+    try {
+      // 1. 读取文件内容
+      const content = fs.readTextSync(filePath);
+
+      // 2. 解析 JSON
+      const parsed = JSON.parse(content) as object;
+      if (!Array.isArray(parsed)) return 0;
+
+      // 3. 转换数据
+      const rawData = parsed as RawImportItem[];
+      const wordList: Word[] = [];
+
+      for (const item of rawData) {
+        // 兼容处理 spelling 字段
+        const spelling = item.spelling || item.word || item.headWord;
+        if (spelling && spelling.trim() !== '') {
+          // ⚠️ 关键修改：严格匹配 Word 接口，不允许多余字段
+          wordList.push({
+            bookId: bookName,
+            spelling: spelling,
+            meaning: item.meaning || item.trans || item.definition || '暂无释义',
+            phonetic: item.phonetic || item.symbol || '',
+            example: item.example || '',
+            note: item.note || '', // 编程模式的注释用这个字段就够了
+
+            roots: WordImporter.toArray(item.roots),
+            affixes: WordImporter.toArray(item.affixes),
+            collocations: WordImporter.toArray(item.collocations),
+            synonyms: WordImporter.toArray(item.synonyms),
+            antonyms: WordImporter.toArray(item.antonyms),
+            derivatives: WordImporter.toArray(item.derivatives),
+            senses: WordImporter.toArray(item.senses),
+
+            // 初始化记忆状态
+            knowledgeScore: 0,
+            proficiency: 0,
+            repetition: 0,
+            interval: 0,
+            easeFactor: 2.5,
+            lastReviewTime: 0,
+            nextReviewTime: 0
+          });
+        }
+      }
+
+      // 4. 批量写入数据库
+      if (wordList.length > 0) {
+        return await DatabaseManager.getInstance().batchInsertWords(bookName, wordList);
+      }
+      return 0;
+    } catch (e) {
+      console.error(`[WordImporter] Path Import Failed: ${JSON.stringify(e)}`);
+      return 0;
+    }
+  }
 
   // 从 RawFile (内置资源) 导入
   static async importFromRawFile(context: common.UIAbilityContext, fileName: string, bookId: string): Promise<number> {
@@ -34,11 +95,9 @@ export class WordImporter {
     const resourceMgr = context.resourceManager;
 
     try {
-      // 尝试从 dicts/ 目录读取
       try {
         fileData = await resourceMgr.getRawFileContent(`dicts/${fileName}`);
       } catch (error) {
-        // 如果失败，尝试从 rawfile 根目录读取
         fileData = await resourceMgr.getRawFileContent(fileName);
       }
     } catch (error) {
@@ -50,7 +109,6 @@ export class WordImporter {
       const textDecoder = util.TextDecoder.create('utf-8', { ignoreBOM: true });
       const content = textDecoder.decodeToString(fileData);
 
-      // 尝试作为 JSON 解析
       try {
         const parsed: object = JSON.parse(content) as object;
         if (Array.isArray(parsed)) {
@@ -58,11 +116,8 @@ export class WordImporter {
           const rawData: RawImportItem[] = array.filter((item: object): boolean => typeof item === 'object' && item !== null) as RawImportItem[];
           return await WordImporter.processJsonData(rawData, bookId);
         }
-      } catch (error) {
-        // 不是 JSON，忽略，继续走文本解析
-      }
+      } catch (error) {}
 
-      // 走 TXT 解析
       return await WordImporter.parseContentString(content, bookId);
 
     } catch (error) {
