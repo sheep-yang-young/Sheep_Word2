@@ -17,7 +17,7 @@ import { TimeAttackPage } from './TimeAttackPage';
 import { DailyNewsPage } from './DailyNewsPage';
 import { SimpleLineChart, CleanCard } from '../components/CustomComponents';
 import { PreferenceManager } from '../utils/PreferenceManager';
-import { NewsWebPage } from './NewsWebPage';
+import { NewsReaderPage } from './NewsReaderPage';
 import { PodcastPage } from './PodcastPage';
 import { CustomImportPage } from './CustomImportPage';
 import { promptAction } from '@kit.ArkUI';
@@ -88,7 +88,7 @@ struct Index {
     else if (name === 'MatchPairsPage') { MatchPairsPage() }
     else if (name === 'TimeAttackPage') { TimeAttackPage() }
     else if (name === 'DailyNewsPage') { DailyNewsPage() }
-    else if (name === 'NewsWebPage') { NewsWebPage() }
+    else if (name === 'NewsWebPage') { NewsReaderPage() }
     else if (name === 'PodcastPage') { PodcastPage() }
     else if (name === 'CustomImportPage') { CustomImportPage() }
     else if (name === 'StorePage') { StorePage() }

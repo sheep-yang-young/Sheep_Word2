@@ -122,11 +122,8 @@ export struct DailyNewsPage {
                   .margin({ bottom: 16, left: 16, right: 16 })
                 }
                 .onClick(() => {
-                  if (item.url) {
-                    this.pageStack.pushPath({ name: 'NewsWebPage', param: item.url });
-                  } else {
-                    promptAction.showToast({ message: '无效的链接' });
-                  }
+                  // 不再检查 url，直接传递整个 item 给阅读器
+                  this.pageStack.pushPath({ name: 'NewsReaderPage', param: item });
                 })
               }, (item: NewsItem) => item.id)
             }

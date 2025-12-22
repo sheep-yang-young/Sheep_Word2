@@ -6,6 +6,7 @@ interface ServerNewsItem {
   id: string;
   title: string;
   description: string;
+  content?: string;
   source?: string;
   picUrl?: string;
   date: string;
@@ -50,7 +51,12 @@ export class NewsManager {
             id: item.id || Math.random().toString(),
             title: item.title ? item.title.trim() : "无标题",
             description: item.description ? item.description.trim() : "暂无描述",
-            source: item.source || 'China Daily',
+
+            // 👇👇👇【核心修复】👇👇👇
+            // 如果服务器没返回 content，就用 description 兜底，防止白屏
+            content: item.content || item.description || "<p>暂无正文内容</p>",
+
+            source: item.source || 'CGTN',
             picUrl: item.picUrl || "",
             date: item.date,
             url: item.url

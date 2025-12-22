@@ -1,0 +1,10 @@
+{
+  "routerMap": [
+    {
+      "name": "NewsReaderPage",
+      "pageSourceFile": "src/main/ets/pages/NewsReaderPage.ets",
+      "buildFunction": "NewsReaderPageBuilder",
+      "data": {}
+    }
+  ]
+}
