@@ -1,8 +1,7 @@
 import { http } from '@kit.NetworkKit';
 import { NewsItem } from '../model/NewsModel';
 
-// 1. 定义服务器返回数据的“形状”（接口）
-// 这样编译器就知道服务器返回的 JSON 长什么样，不再是模糊的 "any"
+// 定义服务器返回的 JSON 结构
 interface ServerNewsItem {
   id: string;
   title: string;
@@ -19,16 +18,21 @@ interface ServerResponse {
 }
 
 export class NewsManager {
-  // 你的服务器 IP
+  // 你的真实服务器 IP
   private static readonly API_URL = 'http://8.134.10.55:3000/api/news/today';
 
   static async getDailyNews(): Promise<NewsItem[]> {
     const httpRequest = http.createHttp();
 
     try {
-      console.info(`[NewsManager] Requesting: ${NewsManager.API_URL}`);
+      // [核心修复] 添加时间戳 ?t=...
+      // 就像给快递单号加了唯一的秒数，让系统认为这是一个全新的请求，绝对不读缓存
+      const timestamp = new Date().getTime();
+      const finalUrl = `${NewsManager.API_URL}?t=${timestamp}`;
 
-      const response = await httpRequest.request(NewsManager.API_URL, {
+      console.info(`[NewsManager] Requesting fresh data: ${finalUrl}`);
+
+      const response = await httpRequest.request(finalUrl, {
         method: http.RequestMethod.GET,
         readTimeout: 10000,
         connectTimeout: 10000,
@@ -36,28 +40,21 @@ export class NewsManager {
       });
 
       if (response.responseCode === 200) {
-        // ERROR 1 修复: 显式告诉编译器，JSON.parse 出来的结果是 ServerResponse 类型
-        // 关键语法: (JSON.parse(...) as ServerResponse)
         const result = JSON.parse(response.result as string) as ServerResponse;
-
-        // ERROR 2 修复: 现在 result.news 已经被识别为 ServerNewsItem[]，不再是 any[]
         const serverNews: ServerNewsItem[] = result.news;
 
         console.info(`[NewsManager] Fetched ${serverNews.length} items from server`);
 
-        // ERROR 3 & 4 修复:
-        // 1. item 参数显式声明类型为 ServerNewsItem
-        // 2. 返回值显式声明为 NewsItem，并用 object literal 严格匹配
         const mappedNews: NewsItem[] = serverNews.map((item: ServerNewsItem): NewsItem => {
           return {
             id: item.id || Math.random().toString(),
-            title: item.title ? item.title.trim() : "",
-            description: item.description ? item.description.trim() : "",
+            title: item.title ? item.title.trim() : "无标题",
+            description: item.description ? item.description.trim() : "暂无描述",
             source: item.source || 'China Daily',
             picUrl: item.picUrl || "",
             date: item.date,
             url: item.url
-          } as NewsItem; // 再次强调类型，防止编译器推断错误
+          } as NewsItem;
         });
 
         return mappedNews;
@@ -65,7 +62,6 @@ export class NewsManager {
         console.error(`[NewsManager] HTTP Error: ${response.responseCode}`);
       }
     } catch (e) {
-      // 这里的 e 在 catch 块中默认是 unknown，转成 string 打印
       console.error(`[NewsManager] Request Failed: ${JSON.stringify(e)}`);
     } finally {
       httpRequest.destroy();

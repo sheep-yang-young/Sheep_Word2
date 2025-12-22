@@ -3,6 +3,7 @@ import { Word } from '../model/WordModel';
 import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
 
+
 @Component
 export struct VocabularyPage {
   @Consume('pageStack') pageStack: NavPathStack;

@@ -1,6 +1,6 @@
 import { DatabaseManager } from '../utils/DatabaseManager';
 import { WordImporter } from '../utils/WordImporter';
-import { DashboardStats, Word } from '../model/WordModel';
+import { DashboardStats } from '../model/WordModel';
 import { common } from '@kit.AbilityKit';
 import { ReviewPage } from './ReviewPage';
 import { VocabularyPage } from './VocabularyPage';
@@ -22,6 +22,14 @@ import { PodcastPage } from './PodcastPage';
 import { CustomImportPage } from './CustomImportPage';
 import { promptAction } from '@kit.ArkUI';
 import { StorePage } from './StorePage';
+import { CloudBook, CloudBookManager } from '../utils/CloudBookManager';
+
+const LOCAL_BOOKS: CloudBook[] = [
+  { id: 'local_cet4', name: 'CET-4', category: 'English', size: '内置', desc: '大学英语四级核心词汇', version: 1 },
+  { id: 'local_cet6', name: 'CET-6', category: 'English', size: '内置', desc: '大学英语六级进阶词汇', version: 1 },
+  { id: 'local_gre', name: 'GRE8000', category: 'English', size: '内置', desc: 'GRE 核心 8000 词', version: 1 },
+  { id: 'local_toefl', name: 'TOEFL', category: 'English', size: '内置', desc: '托福高频词汇', version: 1 }
+];
 
 @Entry
 @Component
@@ -41,6 +49,7 @@ struct Index {
     if (this.isFirstLaunch) {
       await this.initDefaultBook(context);
     }
+
     this.isReady = true;
     this.refreshFlag++;
   }
@@ -48,8 +57,13 @@ struct Index {
   async initDefaultBook(context: common.Context): Promise<void> {
     try {
       const defaultBookName = "CET-4";
-      const count = await WordImporter.importFromRawFile(context as common.UIAbilityContext, 'CET4.json', defaultBookName);
-      if (count > 0) {
+      const exists = await DatabaseManager.getInstance().checkBookExists(defaultBookName);
+      if (!exists) {
+        const count = await WordImporter.importFromRawFile(context as common.UIAbilityContext, 'CET4.json', defaultBookName);
+        if (count > 0) {
+          await PreferenceManager.getInstance().setCurrentBook(defaultBookName);
+        }
+      } else {
         await PreferenceManager.getInstance().setCurrentBook(defaultBookName);
       }
     } catch (e) {
@@ -75,10 +89,9 @@ struct Index {
     else if (name === 'TimeAttackPage') { TimeAttackPage() }
     else if (name === 'DailyNewsPage') { DailyNewsPage() }
     else if (name === 'NewsWebPage') { NewsWebPage() }
-    if (name === 'PodcastPage') { PodcastPage() }
+    else if (name === 'PodcastPage') { PodcastPage() }
     else if (name === 'CustomImportPage') { CustomImportPage() }
     else if (name === 'StorePage') { StorePage() }
-
   }
 
   build() {
@@ -131,6 +144,13 @@ struct HomePage {
   @State currentSkinIndex: number = 0;
   @State sheepScale: number = 1;
 
+  @State isShowBookSheet: boolean = false;
+  @State bookList: CloudBook[] = [];
+  // [新增] 记录哪些书已经下载到了本地
+  @State downloadedBooks: string[] = [];
+  @State isSheetLoading: boolean = false;
+  @State downloadingBookId: string = '';
+
   skins: SheepSkin[] = [
     { id: 0, name: '初级小羊', limit: 0, icon: $r('app.media.sheep_skin_0') },
     { id: 1, name: '学霸小羊', limit: 100, icon: $r('app.media.sheep_skin_1') },
@@ -151,6 +171,46 @@ struct HomePage {
 
   async aboutToAppear(): Promise<void> {
     this.refreshStats();
+    // 预加载本地书单，并检查下载状态
+    this.bookList = [...LOCAL_BOOKS];
+    await this.checkDownloadedStatus();
+  }
+
+  // [新增] 遍历书单，检查每一本书是否在本地数据库中存在
+  async checkDownloadedStatus() {
+    const db = DatabaseManager.getInstance();
+    const newDownloadedList: string[] = [];
+
+    for (const book of this.bookList) {
+      if (book.size === '内置') {
+        newDownloadedList.push(book.name);
+      } else {
+        const exists = await db.checkBookExists(book.name);
+        if (exists) {
+          newDownloadedList.push(book.name);
+        }
+      }
+    }
+    this.downloadedBooks = newDownloadedList;
+  }
+
+  async loadBooks() {
+    this.isSheetLoading = true;
+    this.bookList = [...LOCAL_BOOKS];
+
+    try {
+      const cloud = await CloudBookManager.getManifest();
+      if (cloud && cloud.length > 0) {
+        this.bookList = [...LOCAL_BOOKS, ...cloud];
+      }
+    } catch (e) {
+      console.error('Fetch cloud books error:', e);
+      promptAction.showToast({ message: '获取云端列表失败，请检查服务器配置' });
+    } finally {
+      // 无论成功失败，都重新检查一下哪些书是已下载的
+      await this.checkDownloadedStatus();
+      this.isSheetLoading = false;
+    }
   }
 
   onRefreshTriggered(): void {
@@ -159,18 +219,20 @@ struct HomePage {
 
   async refreshStats(): Promise<void> {
     const db = DatabaseManager.getInstance();
-    this.reviewMode = await PreferenceManager.getInstance().getReviewMode();
-    this.selectedBook = await PreferenceManager.getInstance().getCurrentBook();
-    this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
+    const pref = PreferenceManager.getInstance();
 
-    if (!this.selectedBook || this.selectedBook === "Default Library" || this.selectedBook === "请选择词书") {
+    this.reviewMode = await pref.getReviewMode();
+    this.selectedBook = await pref.getCurrentBook();
+    this.dailyLimit = await pref.getDailyLimit();
+
+    const isValid = this.selectedBook && this.selectedBook !== "Default Library" && this.selectedBook !== "请选择词书";
+    if (!isValid) {
       const valid = await db.findAnyValidBook();
-      const validHasData = await db.checkBookExists(valid);
-      if (valid && validHasData) {
+      if (valid && await db.checkBookExists(valid)) {
         this.selectedBook = valid;
-        await PreferenceManager.getInstance().setCurrentBook(valid);
+        await pref.setCurrentBook(valid);
       } else {
-        this.selectedBook = valid || "Default Library";
+        this.selectedBook = "Default Library";
       }
     }
 
@@ -193,7 +255,9 @@ struct HomePage {
   }
 
   getSheepImage(): Resource {
-    if (this.getTotalPending() > 0) return $r('app.media.sheep_hungry');
+    if (this.getTotalPending() > 0) {
+      return $r('app.media.sheep_hungry');
+    }
     return this.skins[this.currentSkinIndex].icon;
   }
 
@@ -203,48 +267,74 @@ struct HomePage {
     promptAction.showToast({ message: pending > 0 ? `咩~ 我好饿，还有 ${pending} 堆草(单词)没吃！` : '咩~ 吃得好饱！身上的羊毛更亮了！' });
   }
 
-  async handleSwitchBook(): Promise<void> {
-    promptAction.showActionMenu({
-      title: '切换词书',
-      buttons: [
-        { text: '英语四级 (CET4)', color: '#333' },
-        { text: '英语六级 (CET6)', color: '#333' },
-        { text: 'GRE 8000词', color: '#333' },
-        { text: '托福 (TOEFL)', color: '#333' }
-      ]
-    }).then(async (res) => {
-      let fileName = '';
-      let bookName = '';
-      switch (res.index) {
-        case 0: fileName = 'CET4.json'; bookName = 'CET-4'; break;
-        case 1: fileName = 'CET6.json'; bookName = 'CET-6'; break;
-        case 2: fileName = 'GRE8000.json'; bookName = 'GRE8000'; break;
-        case 3: fileName = 'TOEFL.json'; bookName = 'TOEFL'; break;
+  async handleBookClick(book: CloudBook) {
+    if (this.selectedBook === book.name) return;
+
+    const context = getContext(this) as common.UIAbilityContext;
+    const db = DatabaseManager.getInstance();
+
+    const exists = await db.checkBookExists(book.name);
+
+    if (exists) {
+      await this.switchBookLogic(book.name);
+    } else {
+      if (book.size === '内置') {
+        await this.importLocalBook(context, book);
+      } else {
+        await this.downloadAndImportBook(book, context);
       }
-      if (fileName) {
-        try {
-          const context = getContext(this) as common.UIAbilityContext;
-          const exists = await DatabaseManager.getInstance().checkBookExists(bookName);
-          if (exists) {
-            this.selectedBook = bookName;
-            await PreferenceManager.getInstance().setCurrentBook(bookName);
-            await this.refreshStats();
-            promptAction.showToast({ message: `已切换至 ${bookName}` });
-          } else {
-            promptAction.showToast({ message: '正在初始化词库...' });
-            const count = await WordImporter.importFromRawFile(context, fileName, bookName);
-            if (count > 0) {
-              this.selectedBook = bookName;
-              await PreferenceManager.getInstance().setCurrentBook(bookName);
-              await this.refreshStats();
-              promptAction.showToast({ message: `成功导入：${count} 词` });
-            } else {
-              promptAction.showToast({ message: `未找到文件: ${fileName}` });
-            }
-          }
-        } catch (e) {}
+    }
+  }
+
+  async importLocalBook(context: common.UIAbilityContext, book: CloudBook) {
+    this.downloadingBookId = book.id;
+    let fileName = '';
+
+    if (book.name === 'CET-4') fileName = 'CET4.json';
+    else if (book.name === 'CET-6') fileName = 'CET6.json';
+    else if (book.name === 'GRE8000') fileName = 'GRE8000.json';
+    else if (book.name === 'TOEFL') fileName = 'TOEFL.json';
+
+    if (fileName) {
+      const count = await WordImporter.importFromRawFile(context, fileName, book.name);
+      if (count > 0) {
+        await this.checkDownloadedStatus(); // 更新状态
+        await this.switchBookLogic(book.name);
+      } else {
+        promptAction.showToast({ message: '内置词库加载失败' });
       }
-    });
+    }
+    this.downloadingBookId = '';
+  }
+
+  async downloadAndImportBook(book: CloudBook, context: common.UIAbilityContext) {
+    this.downloadingBookId = book.id;
+    try {
+      const path = await CloudBookManager.downloadBook(book.category, book.id, context);
+      if (path) {
+        const count = await WordImporter.importJsonFileFromPath(context, path, book.name);
+        if (count > 0) {
+          await this.checkDownloadedStatus(); // 关键：更新已下载列表状态
+          await this.switchBookLogic(book.name);
+        } else {
+          promptAction.showToast({ message: '导入失败：文件格式错误' });
+        }
+      } else {
+        promptAction.showToast({ message: '下载失败，请检查网络' });
+      }
+    } catch (e) {
+      promptAction.showToast({ message: `错误: ${e.message}` });
+    } finally {
+      this.downloadingBookId = '';
+    }
+  }
+
+  async switchBookLogic(bookName: string) {
+    this.selectedBook = bookName;
+    await PreferenceManager.getInstance().setCurrentBook(bookName);
+    await this.refreshStats();
+    this.isShowBookSheet = false;
+    promptAction.showToast({ message: `已切换至 ${bookName}` });
   }
 
   generateDateList(): void {
@@ -265,7 +355,84 @@ struct HomePage {
     return '#1890FF';
   }
 
-  // --- [优化] 将牧场主页的内容提取为 Builder，简化 build() ---
+  @Builder BookSheetBuilder() {
+    Column() {
+      Row() {
+        if (this.isSheetLoading) {
+          LoadingProgress().width(20).height(20).color('#999').margin({ right: 12 })
+        } else {
+          SymbolGlyph($r('sys.symbol.arrow_clockwise')).fontSize(20).fontColor(['#999']).margin({ right: 12 }).onClick(() => this.loadBooks())
+        }
+        Text('我的书架').fontSize(18).fontWeight(FontWeight.Bold).fontColor('#333')
+        Blank()
+      }.width('100%').padding(20).alignItems(VerticalAlign.Center)
+
+      List({ space: 12 }) {
+        ForEach(this.bookList, (book: CloudBook) => {
+          ListItem() {
+            Row() {
+              Column() {
+                if (book.size === '内置') {
+                  SymbolGlyph($r('sys.symbol.bookmark')).fontSize(24).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#FA8C16'])
+                } else if (book.category === 'English') {
+                  SymbolGlyph($r('sys.symbol.a_square_fill')).fontSize(28).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
+                } else {
+                  Text('</>').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.selectedBook === book.name ? '#0A59F7' : '#888')
+                }
+              }
+              .width(48).height(48).backgroundColor(this.selectedBook === book.name ? '#E6F7FF' : '#F5F5F5')
+              .borderRadius(12).justifyContent(FlexAlign.Center).margin({ right: 16 })
+
+              Column({ space: 4 }) {
+                Row({ space: 6 }) {
+                  Text(book.name).fontSize(16).fontWeight(FontWeight.Medium).fontColor('#333')
+
+                  if (this.selectedBook === book.name) {
+                    Text('当前使用').fontSize(10).fontColor('#0A59F7').backgroundColor('#E6F7FF').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
+                  } else if (book.size === '内置') {
+                    Text('内置').fontSize(10).fontColor('#FA8C16').backgroundColor('#FFF7E6').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
+                  } else {
+                    Text('云端').fontSize(10).fontColor('#13c2c2').backgroundColor('#e6fffb').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
+                  }
+                }
+                Text(`${book.desc} · ${book.size}`).fontSize(12).fontColor('#999').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+
+              if (this.downloadingBookId === book.id) {
+                LoadingProgress().width(24).height(24).color('#0A59F7')
+              } else {
+                // [核心修复] 按钮状态逻辑
+                // 1. 如果正在使用 -> 显示"使用中"
+                // 2. 如果已存在于本地 (checkDownloadedStatus 检测过) -> 显示"切换"
+                // 3. 否则 -> 显示"下载"
+                Button(this.selectedBook === book.name ? '使用中' : (this.downloadedBooks.includes(book.name) ? '切换' : '下载'))
+                  .fontSize(12)
+                  .height(28)
+                  .backgroundColor(this.selectedBook === book.name ? 'rgba(0,0,0,0.05)' : '#0A59F7')
+                  .fontColor(this.selectedBook === book.name ? '#999' : '#FFF')
+                  .onClick(() => this.handleBookClick(book))
+                  .enabled(this.selectedBook !== book.name)
+              }
+            }
+            .width('100%').padding(16).backgroundColor('#FFF').borderRadius(16)
+          }
+        })
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .padding({ left: 16, right: 16, bottom: 30 })
+      .edgeEffect(EdgeEffect.Spring)
+      .cachedCount(10)
+      .nestedScroll({
+        scrollForward: NestedScrollMode.PARENT_FIRST,
+        scrollBackward: NestedScrollMode.SELF_FIRST
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#F5F7FA')
+  }
+
   @Builder HomeContent() {
     Column() {
       Row() {
@@ -277,7 +444,10 @@ struct HomePage {
           }
         }
         .layoutWeight(1).alignItems(HorizontalAlign.Start)
-        .onClick(() => { this.handleSwitchBook() })
+        .onClick(() => {
+          this.isShowBookSheet = true;
+          this.loadBooks();
+        })
 
         Button({ type: ButtonType.Capsule }) {
           Row({ space: 4 }) {
@@ -338,66 +508,56 @@ struct HomePage {
 
   build() {
     Tabs({ barPosition: BarPosition.End, index: this.currentIndex }) {
-
-      // Tab 0: 牧场 (Home)
       TabContent() {
         if (this.currentIndex === 0) {
-          // 包裹一层 Column 以支持 transition
-          Column() {
-            this.HomeContent()
-          }
-          .transition({ type: TransitionType.All, opacity: 0 })
+          Column() { this.HomeContent() }.transition({ type: TransitionType.All, opacity: 0 })
         } else {
-          // 占位
           Column().width('100%').height('100%').backgroundColor('#F5F7FA')
         }
       }
       .tabBar(this.TabBuilder('牧场', 0, $r('sys.symbol.house')))
 
-      // Tab 1: 游乐场 (Practice)
       TabContent() {
         if (this.currentIndex === 1) {
-          Column() {
-            PracticeHubPage()
-          }
-          .transition({ type: TransitionType.All, opacity: 0 })
+          Column() { PracticeHubPage() }.transition({ type: TransitionType.All, opacity: 0 })
         } else {
           Column().width('100%').height('100%').backgroundColor('#F5F7FA')
         }
       }
       .tabBar(this.TabBuilder('游乐场', 1, $r('sys.symbol.square_grid_2x2')))
 
-      // Tab 2: 档案 (Archive)
       TabContent() {
         if (this.currentIndex === 2) {
-          ArchiveView({
-            stats: $stats,
-            chartData: $chartData,
-            activityTrend: $activityTrend
-          })
-            .transition({ type: TransitionType.All, opacity: 0 })
+          ArchiveView({ stats: $stats, chartData: $chartData, activityTrend: $activityTrend }).transition({ type: TransitionType.All, opacity: 0 })
         } else {
           Column().width('100%').height('100%').backgroundColor('#F5F7FA')
         }
       }
       .tabBar(this.TabBuilder('档案', 2, $r('sys.symbol.doc_plaintext')))
-
     }
-    .scrollable(false).barHeight(75).onChange((index) => {
-      // 核心：使用 animateTo 驱动 if/else 的切换，产生平滑过渡效果
-      animateTo({ duration: 300, curve: Curve.EaseInOut }, () => {
-        this.currentIndex = index;
-      })
+    .scrollable(false)
+    .barHeight(75)
+    .onChange((index) => {
+      animateTo({ duration: 300, curve: Curve.EaseInOut }, () => { this.currentIndex = index; })
       this.refreshStats();
+    })
+    .bindSheet($$this.isShowBookSheet, this.BookSheetBuilder(), {
+      detents: [SheetSize.LARGE],
+      backgroundColor: '#F5F7FA',
+      dragBar: true,
+      onDisappear: () => { this.downloadingBookId = '' }
     })
   }
 
   @Builder TabBuilder(title: string, targetIndex: number, icon: Resource) {
     Column() {
-      SymbolGlyph(icon).fontSize(24).fontColor(this.currentIndex === targetIndex ? ['#0A59F7'] : ['#999']).symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, this.currentIndex === targetIndex ? 1 : 0))
+      SymbolGlyph(icon).fontSize(24)
+        .fontColor(this.currentIndex === targetIndex ? ['#0A59F7'] : ['#999'])
+        .symbolEffect(new BounceSymbolEffect(EffectScope.WHOLE, this.currentIndex === targetIndex ? 1 : 0))
       Text(title).fontSize(10).fontColor(this.currentIndex === targetIndex ? '#0A59F7' : '#999').margin({ top: 4 })
     }.width('100%').height('100%').justifyContent(FlexAlign.Center).offset({ y: -5 })
   }
+
   @Builder QuickActionCard(title: string, sub: string, color: string, icon: Resource, action: () => void) {
     Row() {
       Column({ space: 4 }) { Text(title).fontSize(16).fontWeight(FontWeight.Bold).fontColor(Color.White); Text(sub).fontSize(12).fontColor('rgba(255,255,255,0.8)') }.alignItems(HorizontalAlign.Start)
@@ -486,10 +646,20 @@ struct WoolWarehouseDialog {
             Row() {
               Image(skin.icon).width(40).height(40).margin({ right: 12 }).opacity(this.masteredCount >= skin.limit ? 1 : 0.5)
               Column({ space: 4 }) {
-                Text(skin.name).fontSize(16).fontWeight(FontWeight.Medium).fontColor(this.masteredCount >= skin.limit ? '#333' : '#999')
-                if (this.masteredCount < skin.limit) { Text(`还需 ${skin.limit - this.masteredCount} 词解锁`).fontSize(12).fontColor('#FF4D4F') } else { Text('已解锁').fontSize(12).fontColor('#52C41A') }
+                if (this.masteredCount >= skin.limit) {
+                  Text(skin.name).fontSize(16).fontWeight(FontWeight.Medium).fontColor('#333')
+                  Text('已解锁').fontSize(12).fontColor('#52C41A')
+                } else {
+                  Text(skin.name).fontSize(16).fontWeight(FontWeight.Medium).fontColor('#999')
+                  Text(`还需 ${skin.limit - this.masteredCount} 词解锁`).fontSize(12).fontColor('#FF4D4F')
+                }
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
-              if (this.masteredCount >= skin.limit) { Radio({ value: skin.id.toString(), group: 'skins' }).checked(index === this.currentSkinIndex).onChange((isChecked: boolean) => { if (isChecked) this.onSelectSkin(index); }) } else { SymbolGlyph($r('sys.symbol.lock')).fontSize(20).fontColor(['#CCC']) }
+
+              if (this.masteredCount >= skin.limit) {
+                Radio({ value: skin.id.toString(), group: 'skins' }).checked(index === this.currentSkinIndex).onChange((isChecked: boolean) => { if (isChecked) this.onSelectSkin(index); })
+              } else {
+                SymbolGlyph($r('sys.symbol.lock')).fontSize(20).fontColor(['#CCC'])
+              }
             }.width('100%').padding(12).backgroundColor('#F9F9F9').borderRadius(12)
           }
         })
