@@ -6,9 +6,6 @@ import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
 import { vibrator } from '@kit.SensorServiceKit';
-// [修改] 移除 textToSpeech，换回稳定的 MediaKit
-import { media } from '@kit.MediaKit';
-import { BusinessError } from '@kit.BasicServicesKit';
 
 @Component
 export struct ReviewPage {
@@ -37,10 +34,7 @@ export struct ReviewPage {
   @State cardAngle: number = 0;
 
   @State isCodeMode: boolean = false;
-  @State isSpeaking: boolean = false;
 
-  // [修改] 使用 AVPlayer 替代 TTS
-  private avPlayer: media.AVPlayer | undefined = undefined;
   private isHapticOn: boolean = true;
   private currentBookId: string = "Default Library";
 
@@ -63,6 +57,8 @@ export struct ReviewPage {
 
     this.isCodeMode = await prefs.isProgrammingMode();
 
+    // 移除 TTS 初始化
+
     this.words = await DatabaseManager.getInstance().getTodayWordList(this.currentBookId, limit, this.reviewMode);
     this.isLoading = false;
 
@@ -73,68 +69,12 @@ export struct ReviewPage {
     }
   }
 
-  // [修改] 销毁播放器资源
   aboutToDisappear(): void {
-    if (this.avPlayer) {
-      this.avPlayer.release();
-      this.avPlayer = undefined;
-    }
+    // 移除 TTS 停止逻辑
     this.refreshFlag++;
   }
 
-  // [核心修改] AVPlayer 播放逻辑 (标准状态机)
-  async playWord(word: string): Promise<void> {
-    if (!word || this.isSpeaking) return;
-
-    // 编程模式下，默认不自动朗读，除非手动点击
-    // 这里由调用方控制逻辑，playWord 只负责播放
-
-    this.isSpeaking = true;
-    try {
-      // 1. 初始化播放器
-      if (!this.avPlayer) {
-        this.avPlayer = await media.createAVPlayer();
-        this.setAVPlayerCallback();
-      }
-
-      // 2. 重置状态
-      if (this.avPlayer.state !== 'idle') {
-        await this.avPlayer.reset();
-      }
-
-      // 3. 设置 URL (有道美音)
-      this.avPlayer.url = `https://dict.youdao.com/dictvoice?audio=${word}&type=2`;
-    } catch (e) {
-      console.error(`Audio Play Failed: ${JSON.stringify(e)}`);
-      this.isSpeaking = false;
-    }
-  }
-
-  // [核心修改] 状态监听
-  setAVPlayerCallback() {
-    if (!this.avPlayer) return;
-    this.avPlayer.on('stateChange', (state: media.AVPlayerState) => {
-      switch (state) {
-        case 'initialized':
-          this.avPlayer?.prepare();
-          break;
-        case 'prepared':
-          this.avPlayer?.play();
-          break;
-        case 'completed':
-          this.isSpeaking = false; // 播放结束，解除锁定
-          break;
-        case 'error':
-          this.isSpeaking = false;
-          this.avPlayer?.reset();
-          break;
-      }
-    });
-    this.avPlayer.on('error', (err: BusinessError) => {
-      console.error(`AVPlayer error: ${JSON.stringify(err)}`);
-      this.isSpeaking = false;
-    });
-  }
+  // 移除 playWord 方法
 
   loadCurrentWord(): void {
     if (this.currentIndex < this.words.length) {
@@ -147,13 +87,7 @@ export struct ReviewPage {
       this.generateHint(word.spelling);
       this.prepareScenario(word);
 
-      // 非编程模式且非拼写模式，自动发音
-      if (this.reviewMode === 0 && !this.isCodeMode) {
-        //稍微延迟一点点避免切换动画卡顿
-        setTimeout(() => {
-          this.playWord(word.spelling);
-        }, 300);
-      }
+      // 移除自动发音逻辑
     }
   }
 
@@ -219,7 +153,7 @@ export struct ReviewPage {
       this.isSpellingCorrect = true;
       this.triggerHaptic(ReviewGrade.EASY);
       this.showAnswerWithFlip();
-      this.playWord(this.words[this.currentIndex].spelling);
+      // 移除发音调用
     } else {
       this.isSpellingCorrect = false;
       this.triggerHaptic(ReviewGrade.AGAIN);
@@ -304,50 +238,55 @@ export struct ReviewPage {
   build() {
     NavDestination() {
       Column() {
-        if (this.isLoading) { LoadingProgress().width(50).height(50).color('#0A59F7') }
-        else if (this.isFinished) {
-          Column({ space: 20 }) { Image($r('sys.media.ohos_ic_public_ok')).width(80).height(80).fillColor('#10B981'); Text('今日任务完成ヾ(≧▽≦*)o!').fontSize(24).fontWeight(FontWeight.Bold); Text(this.reviewMode === 1 ? 'Spelling practice done.' : 'Daily goals finished.').fontSize(16).fontColor('#999'); Button('返回主页').backgroundColor('#F0F2F5').fontColor('#333').onClick(() => { this.goBack() }) }.width('100%').height('100%').justifyContent(FlexAlign.Center)
+        if (this.isLoading) {
+          LoadingProgress().width(50).height(50).color('#0A59F7')
+        } else if (this.isFinished) {
+          Column({ space: 20 }) {
+            Image($r('sys.media.ohos_ic_public_ok')).width(80).height(80).fillColor('#10B981')
+            Text('今日任务完成ヾ(≧▽≦*)o!').fontSize(24).fontWeight(FontWeight.Bold)
+            Text(this.reviewMode === 1 ? 'Spelling practice done.' : 'Daily goals finished.').fontSize(16).fontColor('#999')
+            Button('返回主页').backgroundColor('#F0F2F5').fontColor('#333').onClick(() => { this.goBack() })
+          }.width('100%').height('100%').justifyContent(FlexAlign.Center)
         } else if (this.words.length > 0) {
-          Row() { Image($r('sys.media.ohos_ic_public_arrow_left')).width(24).height(24).fillColor('#333').onClick(() => { this.goBack() }); Blank(); Text(`${this.currentIndex + 1} / ${this.words.length}`).fontColor('#999').fontSize(16).fontWeight(FontWeight.Medium); Blank(); Row({ space: 16 }) { Image($r('sys.media.ohos_ic_public_edit')).width(22).height(22).fillColor(this.currentNote ? '#0A59F7' : '#CCC').onClick(() => { this.noteController.open(); }); Image($r('sys.media.ohos_ic_public_remove')).width(22).height(22).fillColor('#CCC').onClick(() => { promptAction.showDialog({ title: 'Delete?', message: 'Permanently remove?', buttons: [{ text: 'Cancel', color: '#666' }, { text: 'Delete', color: '#FF4D4F' }] }).then(res => { if (res.index === 1) this.deleteCurrentWord(); }) }) } }.width('100%').padding({ left: 20, right: 20, bottom: 10 })
+          Row() {
+            Image($r('sys.media.ohos_ic_public_arrow_left')).width(24).height(24).fillColor('#333').onClick(() => { this.goBack() })
+            Blank()
+            Text(`${this.currentIndex + 1} / ${this.words.length}`).fontColor('#999').fontSize(16).fontWeight(FontWeight.Medium)
+            Blank()
+            Row({ space: 16 }) {
+              Image($r('sys.media.ohos_ic_public_edit')).width(22).height(22).fillColor(this.currentNote ? '#0A59F7' : '#CCC').onClick(() => { this.noteController.open() })
+              Image($r('sys.media.ohos_ic_public_remove')).width(22).height(22).fillColor('#CCC').onClick(() => {
+                promptAction.showDialog({ title: 'Delete?', message: 'Permanently remove?', buttons: [{ text: 'Cancel', color: '#666' }, { text: 'Delete', color: '#FF4D4F' }] }).then(res => { if (res.index === 1) this.deleteCurrentWord(); })
+              })
+            }
+          }.width('100%').padding({ left: 20, right: 20, bottom: 10 })
           Progress({ value: this.currentIndex + 1, total: this.words.length, type: ProgressType.Linear }).color('#0A59F7').width('100%').height(4)
 
           Column() {
             CleanCard() {
               Stack() {
-                // === 卡片正面 (Front) ===
+                // === Front ===
                 if (this.cardAngle < 90) {
                   Column() {
                     if (this.isCodeMode) {
-                      // --- 极客编程模式 (Front) ---
                       Column() {
-                        Text(this.words[this.currentIndex].spelling)
-                          .fontFamily('Monospace') // 代码字体
-                          .fontSize(20)
-                          .fontWeight(FontWeight.Regular)
-                          .fontColor('#D4D4D4') // VSCode 浅灰
-                          .width('100%')
-                      }
-                      .width('90%')
-                      .padding(20)
-                      .backgroundColor('#1E1E1E') // VSCode 深灰背景
-                      .borderRadius(6)
-                      .margin({ top: 60 })
-                      .alignItems(HorizontalAlign.Start)
-                      .shadow({ radius: 0 }) // 扁平化设计
-
-                      Text('Use Case / API Signature')
-                        .fontSize(12)
-                        .fontColor('#666')
-                        .margin({ top: 12 })
-                        .fontFamily('Monospace')
+                        Text(this.words[this.currentIndex].spelling).fontFamily('Monospace').fontSize(20).fontWeight(FontWeight.Regular).fontColor('#D4D4D4').width('100%')
+                      }.width('90%').padding(20).backgroundColor('#1E1E1E').borderRadius(6).margin({ top: 60 }).alignItems(HorizontalAlign.Start).shadow({ radius: 0 })
+                      Text('Use Case / API Signature').fontSize(12).fontColor('#666').margin({ top: 12 }).fontFamily('Monospace')
                     } else {
-                      // --- 正常英语模式 (Front) ---
                       if (this.reviewMode === 1) {
-                        Column({ space: 16 }) { Text(this.hintText).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#0A59F7').letterSpacing(2).margin({ top: 30 }); TextInput({ placeholder: 'Type the word...', text: this.userInput }).height(56).fontSize(20).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center).fontColor(this.isSpellingCorrect === false ? '#FF4D4F' : '#1A1A1A').onChange((val) => { this.userInput = val; this.isSpellingCorrect = null; }).onSubmit(() => { this.checkSpelling() }); Button('Check').backgroundColor('#F0F2F5').fontColor('#333').height(40).onClick(() => { this.checkSpelling() }) }
+                        Column({ space: 16 }) {
+                          Text(this.hintText).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#0A59F7').letterSpacing(2).margin({ top: 30 })
+                          TextInput({ placeholder: 'Type the word...', text: this.userInput }).height(56).fontSize(20).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center).fontColor(this.isSpellingCorrect === false ? '#FF4D4F' : '#1A1A1A').onChange((val) => { this.userInput = val; this.isSpellingCorrect = null; }).onSubmit(() => { this.checkSpelling() })
+                          Button('Check').backgroundColor('#F0F2F5').fontColor('#333').height(40).onClick(() => { this.checkSpelling() })
+                        }
                       } else {
-                        Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(36).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(36).height(36).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 40 }).alignItems(VerticalAlign.Center)
+                        // 认识模式：移除喇叭图标
+                        Text(this.words[this.currentIndex].spelling).fontSize(36).fontWeight(FontWeight.Bold).fontColor('#1A1A1A').margin({ top: 40 })
                       }
                       if (this.words[this.currentIndex].phonetic) Text(this.words[this.currentIndex].phonetic).fontSize(18).fontColor('#888').margin({ top: 10 })
+
+                      // 场景题 (保留视觉)
                       if (this.reviewMode === 0 && this.scenarioOptions.length > 0) {
                         Column({ space: 8 }) {
                           Text('多义场景选择题').fontSize(14).fontColor('#0A59F7').fontWeight(FontWeight.Medium)
@@ -360,84 +299,51 @@ export struct ReviewPage {
                       }
                     }
 
-                    // 点击翻转区域
+                    // 点击提示
                     if (this.reviewMode === 0) {
                       Column() {
                         Text(this.isCodeMode ? '> 查看实现 (View Impl)' : 'Tap to Show Answer')
-                          .fontSize(16)
-                          .fontColor('#BBB')
-                          .fontFamily(this.isCodeMode ? 'Monospace' : '')
+                          .fontSize(16).fontColor('#BBB').fontFamily(this.isCodeMode ? 'Monospace' : '')
                       }
                       .height(200).justifyContent(FlexAlign.Center).width('100%')
-                      .onClick(() => {
-                        this.showAnswerWithFlip();
-                        // 翻转时如果不是编程模式，再次朗读
-                        if (!this.isCodeMode) this.playWord(this.words[this.currentIndex].spelling);
-                      })
+                      .onClick(() => { this.showAnswerWithFlip(); })
                     }
                   }.width('100%').height('65%')
                 }
-                // === 卡片背面 (Back) ===
+                // === Back ===
                 else {
                   Column() {
                     if (this.isCodeMode) {
-                      // --- 极客编程模式 (Back) ---
                       Column() {
-                        // 标题 (API Name)
-                        Text(this.words[this.currentIndex].spelling)
-                          .fontSize(24).fontWeight(FontWeight.Bold).fontColor('#0A59F7').fontFamily('Monospace').margin({ top: 20 })
-
+                        Text(this.words[this.currentIndex].spelling).fontSize(24).fontWeight(FontWeight.Bold).fontColor('#0A59F7').fontFamily('Monospace').margin({ top: 20 })
                         Divider().color('#EEE').width('90%').margin({ top: 15, bottom: 15 })
-
-                        // 解释 (Description)
-                        Text(this.words[this.currentIndex].meaning)
-                          .fontSize(16).fontColor('#333').textAlign(TextAlign.Start).width('90%').lineHeight(24)
-
-                        // 代码示例区 (Code Snippet)
+                        Text(this.words[this.currentIndex].meaning).fontSize(16).fontColor('#333').textAlign(TextAlign.Start).width('90%').lineHeight(24)
                         if (this.words[this.currentIndex].example) {
-                          Column() {
-                            Text(this.words[this.currentIndex].example)
-                              .fontColor('#A9B7C6') // 代码灰
-                              .fontSize(14)
-                              .fontFamily('Monospace')
-                          }
-                          .width('90%')
-                          .padding(12)
-                          .backgroundColor('#2B2B2B') // 代码背景
-                          .borderRadius(8)
-                          .margin({ top: 16 })
-                          .alignItems(HorizontalAlign.Start)
+                          Column() { Text(this.words[this.currentIndex].example).fontColor('#A9B7C6').fontSize(14).fontFamily('Monospace') }.width('90%').padding(12).backgroundColor('#2B2B2B').borderRadius(8).margin({ top: 16 }).alignItems(HorizontalAlign.Start)
                         }
-
-                        // 笔记/Tags
                         if (this.words[this.currentIndex].note) {
-                          Text(`// ${this.words[this.currentIndex].note}`)
-                            .fontSize(12).fontColor('#6A9955').fontFamily('Monospace').margin({ top: 10 }).width('90%')
+                          Text(`// ${this.words[this.currentIndex].note}`).fontSize(12).fontColor('#6A9955').fontFamily('Monospace').margin({ top: 10 }).width('90%')
                         }
                       }.width('100%')
                     } else {
-                      // --- 正常英语模式 (Back) ---
-                      Row({ space: 8 }) { Text(this.words[this.currentIndex].spelling).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#1A1A1A'); Button({ type: ButtonType.Circle }) { Image($r('sys.media.ohos_ic_public_sound')).width(20).height(20).fillColor('#0A59F7') }.width(32).height(32).backgroundColor('rgba(10, 89, 247, 0.1)').onClick(() => { this.playWord(this.words[this.currentIndex].spelling) }) }.margin({ top: 20 })
+                      // 移除喇叭图标
+                      Text(this.words[this.currentIndex].spelling).fontSize(32).fontWeight(FontWeight.Bold).fontColor('#1A1A1A').margin({ top: 20 })
                       Divider().color('#EEE').width('40%').margin({ top: 20, bottom: 20 })
                       Scroll() { Column({ space: 10 }) {
-                        Text(this.words[this.currentIndex].meaning).fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center);
-                        if (this.words[this.currentIndex].example) Text(this.words[this.currentIndex].example).fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic).textAlign(TextAlign.Center).margin({ top: 10 });
-
+                        Text(this.words[this.currentIndex].meaning).fontSize(22).fontColor('#333').fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
+                        if (this.words[this.currentIndex].example) Text(this.words[this.currentIndex].example).fontSize(16).fontColor('#666').fontStyle(FontStyle.Italic).textAlign(TextAlign.Center).margin({ top: 10 })
                         if ((this.words[this.currentIndex].roots && this.words[this.currentIndex].roots!.length > 0) || (this.words[this.currentIndex].affixes && this.words[this.currentIndex].affixes!.length > 0)) {
                           this.KnowledgeChips('词根词缀卡', (this.words[this.currentIndex].roots || []).concat(this.words[this.currentIndex].affixes || []), '#EEF2FF');
                         }
-
                         if (this.words[this.currentIndex].collocations && this.words[this.currentIndex].collocations!.length > 0) this.CollocationPractice(this.words[this.currentIndex].collocations!);
-
                         if (this.words[this.currentIndex].derivatives && this.words[this.currentIndex].derivatives!.length > 0) this.KnowledgeChips('词族树', this.words[this.currentIndex].derivatives, '#F0FDF4');
-
                         if (this.words[this.currentIndex].synonyms && this.words[this.currentIndex].synonyms!.length > 0) {
                           this.KnowledgeChips('同义/反义', (this.words[this.currentIndex].synonyms || []).concat(this.words[this.currentIndex].antonyms || []), '#F8FAFC');
                         }
-
                         if (this.words[this.currentIndex].senses && this.words[this.currentIndex].senses!.length > 0) this.KnowledgeChips('多义解读', this.words[this.currentIndex].senses, '#FFF7ED');
-
-                        if (this.currentNote) Column() { Text('NOTE').fontSize(10).fontColor('#0A59F7').fontWeight(FontWeight.Bold); Text(this.currentNote).fontSize(14).fontColor('#666').margin({ top: 4 }) }.width('100%').padding(12).backgroundColor('#F0F9FF').borderRadius(8).alignItems(HorizontalAlign.Start).margin({ top: 20 }).onClick(() => { this.noteController.open() })
+                        if (this.currentNote) {
+                          Column() { Text('NOTE').fontSize(10).fontColor('#0A59F7').fontWeight(FontWeight.Bold); Text(this.currentNote).fontSize(14).fontColor('#666').margin({ top: 4 }) }.width('100%').padding(12).backgroundColor('#F0F9FF').borderRadius(8).alignItems(HorizontalAlign.Start).margin({ top: 20 }).onClick(() => { this.noteController.open() })
+                        }
                       }.padding({ left: 20, right: 20 }) }.layoutWeight(1).scrollBar(BarState.Auto)
                     }
                   }
@@ -449,12 +355,25 @@ export struct ReviewPage {
             }
           }.padding({ left: 20, right: 20, top: 30 }).layoutWeight(1)
 
-          if (this.isAnswerShown) { Row({ space: 12 }) { this.ReviewButton('Again', '#FF4D4F', () => { this.submitReview(ReviewGrade.AGAIN) }); this.ReviewButton('Hard', '#FAAD14', () => { this.submitReview(ReviewGrade.HARD) }); this.ReviewButton('Good', '#0A59F7', () => { this.submitReview(ReviewGrade.GOOD) }); this.ReviewButton('Easy', '#10B981', () => { this.submitReview(ReviewGrade.EASY) }) }.padding({ bottom: 30, left: 16, right: 16 }) }
-          else { if (this.reviewMode === 0) Button('Show Answer').width('90%').height(56).backgroundColor('#0A59F7').fontSize(18).onClick(() => { this.showAnswerWithFlip(); if(!this.isCodeMode) this.playWord(this.words[this.currentIndex].spelling); }).margin({ bottom: 40 }); else Button('I don\'t know').width('90%').height(56).backgroundColor(Color.Transparent).fontColor('#999').fontSize(14).onClick(() => { this.showAnswerWithFlip(); if(!this.isCodeMode) this.playWord(this.words[this.currentIndex].spelling); }).margin({ bottom: 40 }) }
+          if (this.isAnswerShown) {
+            Row({ space: 12 }) {
+              this.ReviewButton('Again', '#FF4D4F', () => { this.submitReview(ReviewGrade.AGAIN) })
+              this.ReviewButton('Hard', '#FAAD14', () => { this.submitReview(ReviewGrade.HARD) })
+              this.ReviewButton('Good', '#0A59F7', () => { this.submitReview(ReviewGrade.GOOD) })
+              this.ReviewButton('Easy', '#10B981', () => { this.submitReview(ReviewGrade.EASY) })
+            }.padding({ bottom: 30, left: 16, right: 16 })
+          } else {
+            if (this.reviewMode === 0) {
+              Button('Show Answer').width('90%').height(56).backgroundColor('#0A59F7').fontSize(18).onClick(() => { this.showAnswerWithFlip(); }).margin({ bottom: 40 })
+            } else {
+              Button('I don\'t know').width('90%').height(56).backgroundColor(Color.Transparent).fontColor('#999').fontSize(14).onClick(() => { this.showAnswerWithFlip(); }).margin({ bottom: 40 })
+            }
+          }
         }
       }.width('100%').height('100%').backgroundColor('#F5F7FA').padding({ top: 48 })
     }.hideTitleBar(true)
   }
+
   async recordKnowledge(correct: boolean = true): Promise<void> {
     const word = this.words[this.currentIndex];
     if (word && word.id !== undefined) {
@@ -462,29 +381,20 @@ export struct ReviewPage {
       try { promptAction.showToast({ message: correct ? '已记录知识练习' : '已记录纠错' }); } catch (e) {}
     }
   }
+
   @Builder KnowledgeChips(title: string, items?: string[], bgColor: string = '#F5F7FA') {
     if (items && items.length > 0) {
       Column({ space: 8 }) {
         Text(title).fontSize(12).fontColor('#0F172A').fontWeight(FontWeight.Medium)
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(items, (item: string, index?: number) => {
-            Text(item)
-              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-              .margin({ right: 8, bottom: 8 })
-              .backgroundColor(bgColor)
-              .borderRadius(10)
-              .fontColor('#111827')
-              .fontSize(12)
+            Text(item).padding({ left: 10, right: 10, top: 6, bottom: 6 }).margin({ right: 8, bottom: 8 }).backgroundColor(bgColor).borderRadius(10).fontColor('#111827').fontSize(12)
           }, (item: string, index?: number) => `${item}-${index}`)
-        }
-        .width('100%')
-      }
-      .padding(12)
-      .backgroundColor(Color.White)
-      .borderRadius(12)
-      .border({ width: 1, color: '#EEF2F7' })
+        }.width('100%')
+      }.padding(12).backgroundColor(Color.White).borderRadius(12).border({ width: 1, color: '#EEF2F7' })
     }
   }
+
   @Builder CollocationPractice(list: string[]) {
     Column({ space: 8 }) {
       Row({ space: 6 }) {
@@ -498,12 +408,10 @@ export struct ReviewPage {
         }
         .padding({ top: 4, bottom: 4 })
       }, (item: string, index?: number) => `${item}-${index}`)
-    }
-    .padding(12)
-    .backgroundColor('#F8FAFC')
-    .borderRadius(12)
-    .border({ width: 1, color: '#E5E7EB' })
+    }.padding(12).backgroundColor('#F8FAFC').borderRadius(12).border({ width: 1, color: '#E5E7EB' })
   }
+
   @Builder ReviewButton(l: string, c: string, a: () => void) { Button(l).layoutWeight(1).height(50).backgroundColor(Color.White).fontColor(c).border({ width: 1, color: c }).fontSize(14).fontWeight(FontWeight.Medium).onClick(a) }
 }
+
 @CustomDialog struct NoteDialog { controller: CustomDialogController; @State text: string = ''; onConfirm: (val: string) => void = () => {}; build() { Column({ space: 16 }) { Text('Edit Note').fontSize(18).fontWeight(FontWeight.Bold).width('100%'); TextArea({ text: this.text, placeholder: 'Write your thoughts...' }).height(120).backgroundColor('#F9F9F9').onChange((val) => { this.text = val }); Row({ space: 12 }) { Button('Cancel').layoutWeight(1).backgroundColor('#F5F7FA').fontColor('#666').onClick(() => this.controller.close()); Button('Save').layoutWeight(1).backgroundColor('#0A59F7').fontColor(Color.White).onClick(() => { this.onConfirm(this.text); this.controller.close(); }) } }.padding(20).backgroundColor(Color.White).borderRadius({ topLeft: 24, topRight: 24 }).width('100%') } }

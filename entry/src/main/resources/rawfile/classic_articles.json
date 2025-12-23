@@ -1,0 +1,31 @@
+{
+  "articles": [
+    {
+      "id": "art_bacon_01",
+      "title": "Of Studies",
+      "author": "Francis Bacon",
+      "date": "1625",
+      "source": "Essays",
+      "description": "Studies serve for delight, for ornament, and for ability.",
+      "content": "Studies serve for delight, for ornament, and for ability. Their chief use for delight is in privateness and retiring; for ornament, is in discourse; and for ability, is in the judgment and disposition of business. For expert men can execute, and perhaps judge of particulars, one by one; but the general counsels, and the plots and marshalling of affairs, come best from those that are learned. To spend too much time in studies is sloth; to use them too much for ornament, is affectation; to make judgment wholly by their rules, is the humor of a scholar. They perfect nature, and are perfected by experience: for natural abilities are like natural plants, that need proyning, by study; and studies themselves do give forth directions too much at large, except they be bounded in by experience. Read not to contradict and confute; nor to believe and take for granted; nor to find talk and discourse; but to weigh and consider. Some books are to be tasted, others to be swallowed, and some few to be chewed and digested."
+    },
+    {
+      "id": "art_emerson_01",
+      "title": "Self-Reliance",
+      "author": "Ralph Waldo Emerson",
+      "date": "1841",
+      "source": "Essays: First Series",
+      "description": "Trust thyself: every heart vibrates to that iron string.",
+      "content": "There is a time in every man's education when he arrives at the conviction that envy is ignorance; that imitation is suicide; that he must take himself for better, for worse, as his portion; that though the wide universe is full of good, no kernel of nourishing corn can come to him but through his toil bestowed on that plot of ground which is given to him to till. The power which resides in him is new in nature, and none but he knows what that is which he can do, nor does he know until he has tried. Trust thyself: every heart vibrates to that iron string. Accept the place the divine providence has found for you, the society of your contemporaries, the connection of events. Great men have always done so, and confided themselves childlike to the genius of their age, betraying their perception that the absolutely trustworthy was seated at their heart, working through their hands, predominating in all their being."
+    },
+    {
+      "id": "art_poe_01",
+      "title": "The Tell-Tale Heart",
+      "author": "Edgar Allan Poe",
+      "date": "1843",
+      "source": "The Pioneer",
+      "description": "True!—nervous—very, very dreadfully nervous I had been and am.",
+      "content": "True!—nervous—very, very dreadfully nervous I had been and am; but why will you say that I am mad? The disease had sharpened my senses—not destroyed—not dulled them. Above all was the sense of hearing acute. I heard all things in the heaven and in the earth. I heard many things in the hell. How, then, am I mad? Hearken! and observe how healthily—how calmly I can tell you the whole story. It is impossible to say how first the idea entered my brain; but once conceived, it haunted me day and night. Object there was none. Passion there was none. I loved the old man. He had never wronged me. He had never given me insult. For his gold I had no desire. I think it was his eye! yes, it was this!"
+    }
+  ]
+}
