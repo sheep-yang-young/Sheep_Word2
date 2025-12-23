@@ -6,8 +6,9 @@ import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
 import { vibrator } from '@kit.SensorServiceKit';
-// [新增] 引入鸿蒙原生语音库
-import { textToSpeech } from '@kit.CoreSpeechKit';
+// [修改] 移除 textToSpeech，换回稳定的 MediaKit
+import { media } from '@kit.MediaKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 @Component
 export struct ReviewPage {
@@ -35,15 +36,12 @@ export struct ReviewPage {
 
   @State cardAngle: number = 0;
 
-  // [新增] 编程模式状态
   @State isCodeMode: boolean = false;
-  // [新增] 语音状态防止连点
   @State isSpeaking: boolean = false;
 
-  // [修改] 替换 AVPlayer 为 TTS 引擎
-  private ttsEngine: textToSpeech.TextToSpeechEngine | null = null;
+  // [修改] 使用 AVPlayer 替代 TTS
+  private avPlayer: media.AVPlayer | undefined = undefined;
   private isHapticOn: boolean = true;
-  private ttsSpeed: number = 1.0;
   private currentBookId: string = "Default Library";
 
   noteController: CustomDialogController = new CustomDialogController({
@@ -57,17 +55,12 @@ export struct ReviewPage {
   });
 
   async aboutToAppear(): Promise<void> {
-    // [修改] 初始化 TTS 而不是 AVPlayer
-    await this.initTTS();
-
     const prefs = PreferenceManager.getInstance();
     const limit = await prefs.getDailyLimit();
     this.isHapticOn = await prefs.isHapticEnabled();
     this.reviewMode = await prefs.getReviewMode();
-    this.ttsSpeed = await prefs.getTtsSpeed();
     this.currentBookId = await prefs.getCurrentBook();
 
-    // [新增] 读取编程模式开关
     this.isCodeMode = await prefs.isProgrammingMode();
 
     this.words = await DatabaseManager.getInstance().getTodayWordList(this.currentBookId, limit, this.reviewMode);
@@ -80,69 +73,67 @@ export struct ReviewPage {
     }
   }
 
-  // [新增] 初始化鸿蒙原生 TTS 引擎
-  async initTTS() {
-    try {
-      // 创建引擎，设置语言为美式英语
-      this.ttsEngine = await textToSpeech.createEngine({
-        language: 'en-US',
-        person: 0,
-        online: 1, // 优先离线，支持在线
-        extraParams: { "style": "interaction-broadcast" }
-      });
-      console.info('[ReviewPage] TTS Engine Created');
-    } catch (err) {
-      console.error(`[ReviewPage] TTS Init Failed: ${JSON.stringify(err)}`);
+  // [修改] 销毁播放器资源
+  aboutToDisappear(): void {
+    if (this.avPlayer) {
+      this.avPlayer.release();
+      this.avPlayer = undefined;
     }
+    this.refreshFlag++;
   }
 
-  // [修改] 使用 TTS 播放
-  async playWord(text: string): Promise<void> {
-    if (!this.ttsEngine || this.isSpeaking) return;
+  // [核心修改] AVPlayer 播放逻辑 (标准状态机)
+  async playWord(word: string): Promise<void> {
+    if (!word || this.isSpeaking) return;
 
-    // 编程模式下，默认不自动朗读 API 名称，除非用户点击喇叭
-    // 这里我们允许它读，或者你可以加 if (this.isCodeMode) return;
+    // 编程模式下，默认不自动朗读，除非手动点击
+    // 这里由调用方控制逻辑，playWord 只负责播放
 
     this.isSpeaking = true;
     try {
-      let speakParams: textToSpeech.SpeakParams = {
-        requestId: Date.now().toString(),
-        extraParams: {
-          "speed": this.ttsSpeed * 50, // 鸿蒙标准速度是 50
-          "volume": 100,
-          "pitch": 50,
-          "audioType": "pcm"
-        }
-      };
+      // 1. 初始化播放器
+      if (!this.avPlayer) {
+        this.avPlayer = await media.createAVPlayer();
+        this.setAVPlayerCallback();
+      }
 
-      // 设置监听以重置 isSpeaking 状态
-      this.ttsEngine.setListener({
-        // 开始播放
-        onStart: (requestId: string) => { console.info('TTS Start'); },
-        // 播放完成
-        onComplete: (requestId: string) => { this.isSpeaking = false; },
-        // 播放停止（被打断）
-        onStop: (requestId: string) => { this.isSpeaking = false; },
-        // 播放出错
-        onError: (requestId: string, errorCode: number, errorMessage: string) => {
-          console.error(`TTS Error ${errorCode}: ${errorMessage}`);
-          this.isSpeaking = false;
-        }
-      });
+      // 2. 重置状态
+      if (this.avPlayer.state !== 'idle') {
+        await this.avPlayer.reset();
+      }
 
-      await this.ttsEngine.speak(text, speakParams);
+      // 3. 设置 URL (有道美音)
+      this.avPlayer.url = `https://dict.youdao.com/dictvoice?audio=${word}&type=2`;
     } catch (e) {
-      console.error(`[ReviewPage] Speak Error: ${JSON.stringify(e)}`);
+      console.error(`Audio Play Failed: ${JSON.stringify(e)}`);
       this.isSpeaking = false;
     }
   }
 
-  // [修改] 页面销毁时释放 TTS
-  aboutToDisappear(): void {
-    if (this.ttsEngine) {
-      this.ttsEngine.shutdown();
-    }
-    this.refreshFlag++;
+  // [核心修改] 状态监听
+  setAVPlayerCallback() {
+    if (!this.avPlayer) return;
+    this.avPlayer.on('stateChange', (state: media.AVPlayerState) => {
+      switch (state) {
+        case 'initialized':
+          this.avPlayer?.prepare();
+          break;
+        case 'prepared':
+          this.avPlayer?.play();
+          break;
+        case 'completed':
+          this.isSpeaking = false; // 播放结束，解除锁定
+          break;
+        case 'error':
+          this.isSpeaking = false;
+          this.avPlayer?.reset();
+          break;
+      }
+    });
+    this.avPlayer.on('error', (err: BusinessError) => {
+      console.error(`AVPlayer error: ${JSON.stringify(err)}`);
+      this.isSpeaking = false;
+    });
   }
 
   loadCurrentWord(): void {
@@ -156,8 +147,13 @@ export struct ReviewPage {
       this.generateHint(word.spelling);
       this.prepareScenario(word);
 
-      // 如果不是拼写模式，自动发音（编程模式下也许可以关掉自动发音，这里保留）
-      if (this.reviewMode === 0 && !this.isCodeMode) this.playWord(word.spelling);
+      // 非编程模式且非拼写模式，自动发音
+      if (this.reviewMode === 0 && !this.isCodeMode) {
+        //稍微延迟一点点避免切换动画卡顿
+        setTimeout(() => {
+          this.playWord(word.spelling);
+        }, 300);
+      }
     }
   }
 
@@ -375,6 +371,7 @@ export struct ReviewPage {
                       .height(200).justifyContent(FlexAlign.Center).width('100%')
                       .onClick(() => {
                         this.showAnswerWithFlip();
+                        // 翻转时如果不是编程模式，再次朗读
                         if (!this.isCodeMode) this.playWord(this.words[this.currentIndex].spelling);
                       })
                     }

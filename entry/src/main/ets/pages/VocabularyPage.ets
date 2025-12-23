@@ -2,7 +2,6 @@ import { DatabaseManager } from '../utils/DatabaseManager';
 import { Word } from '../model/WordModel';
 import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
-// 1. 引入媒体库
 import { media } from '@kit.MediaKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 
@@ -15,8 +14,7 @@ export struct VocabularyPage {
   @State currentBookId: string = "默认词库";
   @State selectedWord: Word = { id: 0, bookId: '', spelling: '', meaning: '', phonetic: '', note: '', roots: [], affixes: [], collocations: [], synonyms: [], antonyms: [], derivatives: [], senses: [], knowledgeScore: 0, proficiency: 0, repetition: 0, interval: 0, easeFactor: 0, lastReviewTime: 0, nextReviewTime: 0 };
 
-  // 2. 音频播放器实例
-  private avPlayer: media.AVPlayer | null = null;
+  private avPlayer: media.AVPlayer | undefined = undefined;
 
   dialogController: CustomDialogController = new CustomDialogController({ builder: EditWordDialog({ editingWord: this.selectedWord, onConfirm: (word: Word) => { this.saveEdit(word) } }), alignment: DialogAlignment.Bottom, autoCancel: true, customStyle: true });
   knowledgeController: CustomDialogController = new CustomDialogController({ builder: KnowledgeDialog({ word: this.selectedWord, onPractice: (word: Word, correct: boolean) => { this.recordKnowledgePractice(word, correct) } }), alignment: DialogAlignment.Bottom, autoCancel: true, customStyle: true });
@@ -26,38 +24,55 @@ export struct VocabularyPage {
     this.refreshList();
   }
 
-  // 3. 播放发音逻辑 (极简版)
+  // 页面销毁时释放资源
+  aboutToDisappear(): void {
+    if (this.avPlayer) {
+      this.avPlayer.release();
+      this.avPlayer = undefined;
+    }
+  }
+
   async playWordAudio(word: string) {
     if (!word) return;
     try {
-      // 如果播放器未创建，则创建
       if (!this.avPlayer) {
         this.avPlayer = await media.createAVPlayer();
-        // 监听状态变化
-        this.avPlayer.on('stateChange', (state: media.AVPlayerState) => {
-          if (state === 'initialized') {
-            this.avPlayer?.prepare();
-          } else if (state === 'prepared') {
-            this.avPlayer?.setVolume(1.0); // 音量拉满
-            this.avPlayer?.play();
-          }
-        });
-        this.avPlayer.on('error', (err: BusinessError) => {
-          console.error(`Audio Error: ${JSON.stringify(err)}`);
-        });
+        this.setAVPlayerCallback();
       }
 
-      // 如果正在播放或已就绪，先重置
-      if (this.avPlayer.state === 'playing' || this.avPlayer.state === 'prepared' || this.avPlayer.state === 'completed' || this.avPlayer.state === 'stopped') {
+      // 只有在 idle, initialized, prepared, stopped, completed 状态下才能 reset
+      // 为了稳健，直接重置到 idle 状态
+      if (this.avPlayer.state !== 'idle') {
         await this.avPlayer.reset();
       }
 
-      // 设置 URL (有道美音)
+      // 设置 URL 触发 initialized 状态
       this.avPlayer.url = `https://dict.youdao.com/dictvoice?audio=${word}&type=2`;
-
     } catch (e) {
-      console.error('Audio Play Failed:', JSON.stringify(e));
+      console.error(`Audio Play Failed: ${JSON.stringify(e)}`);
+      promptAction.showToast({ message: '发音失败，请检查网络' });
     }
+  }
+
+  setAVPlayerCallback() {
+    if (!this.avPlayer) return;
+    this.avPlayer.on('stateChange', (state: media.AVPlayerState) => {
+      switch (state) {
+        case 'initialized':
+          this.avPlayer?.prepare();
+          break;
+        case 'prepared':
+          this.avPlayer?.play();
+          break;
+        case 'error':
+          console.error('AVPlayer state error');
+          this.avPlayer?.reset();
+          break;
+      }
+    });
+    this.avPlayer.on('error', (err: BusinessError) => {
+      console.error(`AVPlayer error: ${JSON.stringify(err)}`);
+    });
   }
 
   async refreshList(): Promise<void> { this.words = await DatabaseManager.getInstance().searchWords(this.currentBookId, this.keyword, this.sortMode); }
@@ -76,7 +91,6 @@ export struct VocabularyPage {
               ListItem() {
                 Row() {
                   Column({ space: 4 }) {
-                    // 4. 修改这里：单词文本 + 小喇叭图标
                     Row() {
                       Text(item.spelling).fontSize(18).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
                       SymbolGlyph($r('sys.symbol.speaker_wave_2'))
@@ -85,7 +99,6 @@ export struct VocabularyPage {
                         .margin({ left: 8 })
                     }
                     .onClick(() => {
-                      // 点击发音
                       this.playWordAudio(item.spelling);
                     })
 
@@ -114,7 +127,6 @@ export struct VocabularyPage {
   @Builder DeleteButton(id: number) { Button() { Image($r('sys.media.ohos_ic_public_remove')).width(24).height(24).fillColor(Color.White) }.width(60).height('100%').backgroundColor('#FF4D4F').type(ButtonType.Normal).borderRadius({ topRight: 12, bottomRight: 12 }).onClick(() => { this.deleteWord(id); }) }
 }
 
-// 下面的 Dialog 代码保持不变，为节省篇幅省略，请保留你原本的代码...
 @CustomDialog struct EditWordDialog { controller: CustomDialogController; @State editingWord: Word = { id: 0, bookId: '', spelling: '', meaning: '', phonetic: '', note: '', roots: [], affixes: [], collocations: [], synonyms: [], antonyms: [], derivatives: [], senses: [], knowledgeScore: 0, proficiency: 0, repetition: 0, interval: 0, easeFactor: 0, lastReviewTime: 0, nextReviewTime: 0 }; onConfirm: (word: Word) => void = () => {}; build() { Column({ space: 16 }) { Text('编辑单词').fontSize(20).fontWeight(FontWeight.Bold).width('100%').textAlign(TextAlign.Start); TextInput({ text: this.editingWord.spelling, placeholder: '单词拼写' }).onChange((val) => { this.editingWord.spelling = val }); TextInput({ text: this.editingWord.phonetic, placeholder: '音标 (可选)' }).onChange((val) => { this.editingWord.phonetic = val }); TextArea({ text: this.editingWord.meaning, placeholder: '中文释义' }).height(80).onChange((val) => { this.editingWord.meaning = val }); Row({ space: 12 }) { Button('取消').layoutWeight(1).backgroundColor('#F5F7FA').fontColor('#666').onClick(() => { this.controller.close() }); Button('保存').layoutWeight(1).backgroundColor('#0A59F7').fontColor(Color.White).onClick(() => { this.onConfirm(this.editingWord); this.controller.close(); }) }.width('100%').margin({ top: 10 }) }.padding(24).backgroundColor(Color.White).borderRadius({ topLeft: 24, topRight: 24 }).width('100%') } }
 @CustomDialog struct KnowledgeDialog {
   controller: CustomDialogController;

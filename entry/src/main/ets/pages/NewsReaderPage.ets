@@ -13,16 +13,14 @@ export struct NewsReaderPage {
   private webController: webview.WebviewController = new webview.WebviewController();
 
   aboutToAppear(): void {
-    // 获取传递过来的新闻对象
     const params = this.pageStack.getParamByName("NewsReaderPage") as NewsItem[];
     if (params && params.length > 0) {
       this.newsItem = params[0];
-      console.info('ReaderPage received content length:', this.newsItem.content?.length);
     }
   }
 
-  // 构建优雅的阅读器 HTML
   private buildHtml(item: NewsItem): string {
+    // 构建响应式 HTML，优化阅读体验
     return `
       <!DOCTYPE html>
       <html>
@@ -33,42 +31,46 @@ export struct NewsReaderPage {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             line-height: 1.8;
             color: #333;
-            padding: 20px;
+            padding: 24px 20px;
             margin: 0;
             background-color: #fff;
+            word-wrap: break-word;
           }
           h1 {
-            font-size: 24px;
+            font-size: 26px;
             font-weight: 800;
-            margin-bottom: 10px;
-            line-height: 1.3;
+            margin-bottom: 12px;
+            line-height: 1.4;
             color: #111;
           }
           .meta {
             font-size: 13px;
             color: #999;
-            margin-bottom: 25px;
+            margin-bottom: 30px;
             display: flex;
-            justify-content: space-between;
+            align-items: center;
           }
           .source {
             font-weight: 600;
             color: #0A59F7;
+            margin-right: 12px;
           }
           img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            margin: 15px 0;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            max-width: 100% !important;
+            height: auto !important;
+            border-radius: 12px;
+            margin: 20px 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            display: block;
           }
           p {
-            margin-bottom: 16px;
+            margin-bottom: 20px;
             font-size: 17px;
             text-align: justify;
+            color: #444;
           }
-          /* 去掉RSS内容中可能带有的内联样式干扰 */
-          * { max-width: 100% !important; }
+          /* 针对 RSS 可能存在的脏数据进行清洗 */
+          iframe, video { max-width: 100%; }
         </style>
       </head>
       <body>
@@ -88,7 +90,7 @@ export struct NewsReaderPage {
   build() {
     NavDestination() {
       Column() {
-        // --- 顶部栏 ---
+        // 顶部导航栏
         Row() {
           Button({ type: ButtonType.Circle }) {
             SymbolGlyph($r('sys.symbol.chevron_left')).fontSize(24).fontColor([Color.Black])
@@ -101,35 +103,47 @@ export struct NewsReaderPage {
           Text('Reading Mode')
             .fontSize(18)
             .fontWeight(FontWeight.Bold)
-            .margin({ left: 4 })
-            .layoutWeight(1) // 占满剩余空间
-            .textAlign(TextAlign.Center) // 居中
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
             .padding({ right: 48 }) // 视觉居中修正
-
         }
         .width('100%')
-        .padding({ top: 40, left: 16, right: 16, bottom: 10 })
-        .alignItems(VerticalAlign.Center)
+        .height(56)
+        .padding({ left: 16, right: 16 })
         .backgroundColor(Color.White)
+        .shadow({ radius: 2, color: 'rgba(0,0,0,0.05)', offsetY: 1 })
+        .zIndex(1)
 
-        // --- 内容区域 ---
+        // Web 阅读器
         if (this.newsItem) {
           Web({ src: '', controller: this.webController })
             .width('100%')
             .layoutWeight(1)
+            .domStorageAccess(true) // 开启 DOM 存储，防止部分样式解析失败
+            .javaScriptAccess(true) // 允许 JS，防止图片懒加载失效
             .onControllerAttached(() => {
-              // 核心：注入我们构建的精美 HTML
-              this.webController.loadData(
-                this.buildHtml(this.newsItem!),
-                'text/html',
-                'UTF-8'
-              );
+              try {
+                // 【核心修复】必须传入 baseUrl 和 historyUrl ("about:blank")
+                // 否则 Web 组件可能认为这是不安全的跨域内容而拒绝渲染
+                this.webController.loadData(
+                  this.buildHtml(this.newsItem!),
+                  'text/html',
+                  'UTF-8',
+                  'about:blank',
+                  'about:blank'
+                );
+              } catch (e) {
+                console.error('Web loadData failed:', JSON.stringify(e));
+              }
             })
         } else {
-          // 错误处理
           Column() {
-            Text("无法加载文章内容").fontColor(Color.Gray)
-          }.layoutWeight(1).justifyContent(FlexAlign.Center)
+            SymbolGlyph($r('sys.symbol.info_circle')).fontSize(48).fontColor(['#DDD'])
+            Text("文章内容加载失败").fontSize(14).fontColor(Color.Gray).margin({ top: 12 })
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
         }
       }
       .width('100%')
