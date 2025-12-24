@@ -20,7 +20,10 @@ export struct PracticeHubPage {
       const validBook = await db.findAnyValidBook();
       if (validBook && validBook !== "Default Library") {
         this.bookId = validBook;
-        await PreferenceManager.getInstance().setCurrentBook(validBook);
+        const pref = PreferenceManager.getInstance();
+        const category = await pref.getBookCategory(validBook) || 'English';
+        await pref.registerBookCategory(validBook, category);
+        await pref.setCurrentBook(validBook);
       }
     }
 

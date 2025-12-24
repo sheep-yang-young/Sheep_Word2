@@ -64,14 +64,17 @@ struct Index {
   async initDefaultBook(context: common.Context): Promise<void> {
     try {
       const defaultBookName = "CET-4";
+      const pref = PreferenceManager.getInstance();
       const exists = await DatabaseManager.getInstance().checkBookExists(defaultBookName);
       if (!exists) {
         const count = await WordImporter.importFromRawFile(context as common.UIAbilityContext, 'CET4.json', defaultBookName);
         if (count > 0) {
-          await PreferenceManager.getInstance().setCurrentBook(defaultBookName);
+          await pref.registerBookCategory(defaultBookName, 'English');
+          await pref.setCurrentBook(defaultBookName);
         }
       } else {
-        await PreferenceManager.getInstance().setCurrentBook(defaultBookName);
+        await pref.registerBookCategory(defaultBookName, 'English');
+        await pref.setCurrentBook(defaultBookName);
       }
     } catch (e) {
       console.error('[Lumina] Failed to init default book:', e);
@@ -256,6 +259,10 @@ struct HomePage {
       const valid = await db.findAnyValidBook();
       if (valid && await db.checkBookExists(valid)) {
         this.selectedBook = valid;
+        const inferredCategory = this.getBookCategoryFromRegistry(valid);
+        if (inferredCategory) {
+          await pref.registerBookCategory(valid, inferredCategory);
+        }
         await pref.setCurrentBook(valid);
       } else {
         this.selectedBook = "Default Library";
@@ -302,7 +309,7 @@ struct HomePage {
     const exists = await db.checkBookExists(book.name);
 
     if (exists) {
-      await this.switchBookLogic(book.name);
+      await this.switchBookLogic(book);
     } else {
       if (book.size === '内置') {
         await this.importLocalBook(context, book);
@@ -325,7 +332,7 @@ struct HomePage {
       const count = await WordImporter.importFromRawFile(context, fileName, book.name);
       if (count > 0) {
         await this.checkDownloadedStatus();
-        await this.switchBookLogic(book.name);
+        await this.switchBookLogic(book);
       } else {
         promptAction.showToast({ message: '内置词库加载失败' });
       }
@@ -341,7 +348,7 @@ struct HomePage {
         const count = await WordImporter.importJsonFileFromPath(context, path, book.name);
         if (count > 0) {
           await this.checkDownloadedStatus();
-          await this.switchBookLogic(book.name);
+          await this.switchBookLogic(book);
         } else {
           promptAction.showToast({ message: '导入失败：文件格式错误' });
         }
@@ -355,12 +362,24 @@ struct HomePage {
     }
   }
 
-  async switchBookLogic(bookName: string) {
+  async switchBookLogic(book: CloudBook | string) {
+    const bookName = typeof book === 'string' ? book : book.name;
+    const category = typeof book === 'string' ? undefined : book.category;
+
+    if (category) {
+      await PreferenceManager.getInstance().registerBookCategory(bookName, category);
+    }
+
     this.selectedBook = bookName;
     await PreferenceManager.getInstance().setCurrentBook(bookName);
     await this.refreshStats();
     this.isShowBookSheet = false;
     promptAction.showToast({ message: `已切换至 ${bookName}` });
+  }
+
+  private getBookCategoryFromRegistry(bookName: string): string | undefined {
+    const target = this.bookList.find(item => item.name === bookName);
+    return target?.category;
   }
 
   generateDateList(): void {

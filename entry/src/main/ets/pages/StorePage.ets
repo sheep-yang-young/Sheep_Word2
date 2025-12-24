@@ -45,11 +45,13 @@ export struct StorePage {
 
         if (count > 0) {
           // 3. 自动切换到这本书
-          await PreferenceManager.getInstance().setCurrentBook(book.name);
+          const pref = PreferenceManager.getInstance();
+          await pref.registerBookCategory(book.name, book.category);
+          const isCodeMode = await pref.setCurrentBook(book.name);
           this.refreshFlag++; // 刷新首页
           promptAction.showDialog({
             title: '导入成功',
-            message: `已导入 ${count} 条数据到《${book.name}》，并已设为当前词书。`,
+            message: `已导入 ${count} 条数据到《${book.name}》，并已设为当前词书。${isCodeMode ? '\n编程模式已同步开启。' : ''}`,
             buttons: [{ text: '去背诵', color: '#0A59F7' }]
           }).then(() => {
             this.pageStack.pop(); // 返回上一页
