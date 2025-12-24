@@ -6,6 +6,8 @@ import { PreferenceManager } from '../utils/PreferenceManager';
 import { LuminaFloatingBallManager } from '../utils/LuminaFloatingBallManager';
 import { CapsuleFlow } from '../utils/CapsuleFlow';
 import { LuminaLog } from '../utils/LuminaLog';
+import { ScreenshotFlow } from '../utils/ScreenshotFlow';
+import { ScreenshotManager } from '../utils/ScreenshotManager';
 
 export default class EntryAbility extends UIAbility {
   private stageRef: window.WindowStage | null = null;
@@ -16,6 +18,7 @@ export default class EntryAbility extends UIAbility {
     LuminaLog.i(`EntryAbility.onCreate want=${JSON.stringify(want)} parameters=${JSON.stringify(want?.parameters)}`);
     await PreferenceManager.getInstance().init(this.context);
     await DatabaseManager.getInstance().init(this.context);
+    ScreenshotManager.getInstance().init(this.context);
 
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
@@ -29,6 +32,13 @@ export default class EntryAbility extends UIAbility {
     if (p && (p['openCapsuleImport'] === true)) {
       LuminaLog.i('EntryAbility.onCreate detected openCapsuleImport');
       CapsuleFlow.markAutoPickPending();
+    }
+
+    if (p && (p['openScreenshotGallery'] === true)) {
+      const path = typeof p['screenshotPath'] === 'string' ? p['screenshotPath'] as string : '';
+      ScreenshotFlow.markPendingOpen(path, true);
+      AppStorage.setOrCreate('NavigateToScreenshotBox', true);
+      if (path) AppStorage.setOrCreate('LatestScreenshotPath', path);
     }
   }
 
@@ -54,6 +64,9 @@ export default class EntryAbility extends UIAbility {
       LuminaLog.i('EntryAbility.onWindowStageCreate triggering NavigateToCapsuleImport');
       AppStorage.setOrCreate('NavigateToCapsuleImport', true);
     }
+    if (ScreenshotFlow.consumePendingOpen()) {
+      AppStorage.setOrCreate('NavigateToScreenshotBox', true);
+    }
     windowStage.loadContent('pages/Index');
 
     // 恢复悬浮球状态
@@ -71,6 +84,14 @@ export default class EntryAbility extends UIAbility {
       // 触发 UI 跳转
       LuminaLog.i('EntryAbility.onNewWant triggering NavigateToCapsuleImport');
       AppStorage.setOrCreate('NavigateToCapsuleImport', true);
+    }
+
+    if (p && (p['openScreenshotGallery'] === true)) {
+      const path = typeof p['screenshotPath'] === 'string' ? p['screenshotPath'] as string : '';
+      ScreenshotFlow.markPendingOpen(path, true);
+      LuminaLog.i('EntryAbility.onNewWant triggering NavigateToScreenshotBox');
+      AppStorage.setOrCreate('NavigateToScreenshotBox', true);
+      if (path) AppStorage.setOrCreate('LatestScreenshotPath', path);
     }
   }
 }

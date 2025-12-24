@@ -4,6 +4,8 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import missionManager from '@ohos.app.ability.missionManager';
 import floatingBall from '@ohos.window.floatingBall';
 import { CapsuleFlow } from './CapsuleFlow';
+import { ScreenshotManager } from './ScreenshotManager';
+import { ScreenshotFlow } from './ScreenshotFlow';
 
 const DOMAIN: number = 0xA0A03D;
 const TAG: string = 'LuminaBall';
@@ -107,8 +109,24 @@ export class LuminaFloatingBallManager {
       return;
     }
 
-    // 标记：进入页面后自动拉起选择截图
-    CapsuleFlow.markAutoPickPending();
+    // 自动截图并标记导入流程
+    let latestPath: string | null = null;
+    let captured = false;
+    try {
+      const shot = await ScreenshotManager.getInstance().captureAndStore();
+      if (shot) {
+        latestPath = shot.path;
+        ScreenshotFlow.markPendingOpen(latestPath, true);
+        captured = true;
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'capture screenshot failed %{public}s', JSON.stringify(e));
+    }
+
+    // 标记：进入页面后自动拉起选择截图（兼容旧流程）
+    if (!captured) {
+      CapsuleFlow.markAutoPickPending();
+    }
 
     const abilityInfo = this.ctx.abilityInfo;
     if (!abilityInfo || !abilityInfo.bundleName || !abilityInfo.name) {
@@ -131,7 +149,9 @@ export class LuminaFloatingBallManager {
       abilityName: abilityName,
       parameters: {
         // 这个参数将在 EntryAbility 中被捕获
-        openCapsuleImport: true
+        openCapsuleImport: true,
+        openScreenshotGallery: true,
+        screenshotPath: latestPath || ''
       }
     };
 

@@ -130,6 +130,45 @@ export class FloatingCapsuleManager {
     }
   }
 
+  async triggerImportFromFile(path: string): Promise<number> {
+    if (this.isProcessing || !this.context || !path) return 0;
+    this.isProcessing = true;
+
+    let pixelMap: image.PixelMap | null = null;
+    let fd: number | null = null;
+
+    try {
+      const decode: DecodeResult = await this.decodePixelMapFromUri(path);
+      pixelMap = decode.pixelMap;
+      fd = decode.fd;
+
+      const visionInfo: textRecognition.VisionInfo = { pixelMap: pixelMap };
+      const textResult = await textRecognition.recognizeText(visionInfo);
+      const fullText: string = (textResult && textResult.value) ? String(textResult.value) : '';
+
+      hilog.info(DOMAIN, TAG, 'OCR (file) text length=%{public}d', fullText.length);
+
+      const parsed: CapsuleRecognitionResult = await this.parseWords(fullText);
+      this.lastResult = parsed;
+
+      if (this.onRecognized) this.onRecognized(parsed);
+
+      return parsed.words.length;
+    } catch (err) {
+      const error = err as BusinessError;
+      hilog.error(DOMAIN, TAG, 'Import from file failed=%{public}s', JSON.stringify(error));
+      return 0;
+    } finally {
+      if (pixelMap) {
+        try { await pixelMap.release(); } catch (e) {}
+      }
+      if (fd !== null) {
+        try { fileIo.closeSync(fd); } catch (e) {}
+      }
+      this.isProcessing = false;
+    }
+  }
+
   async confirmImport(targetBookId: string, selected: CapsuleWordCandidate[]): Promise<CapsuleImportResult> {
     const bookId: string = (targetBookId && targetBookId.trim().length > 0) ? targetBookId.trim() : 'Captured_Words';
 

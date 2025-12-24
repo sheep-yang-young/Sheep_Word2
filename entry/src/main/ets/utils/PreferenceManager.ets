@@ -14,6 +14,7 @@ const KEY_TIME_ATTACK_STATE = 'time_attack_state';
 const KEY_CODE_MODE = 'is_code_mode';
 const KEY_BOOK_CATEGORY_REGISTRY = 'book_category_registry';
 const KEY_FLOATING_BALL = 'floating_ball_enabled';
+const KEY_CAPTURED_SCREENSHOTS = 'captured_screenshots';
 
 const CODE_KEYWORDS = ['code', 'program', 'java', 'python', 'cpp', 'c++', 'algorithm', '编程', '代码', '算法'];
 
@@ -81,6 +82,34 @@ export class PreferenceManager {
   async setFloatingBallEnabled(enabled: boolean): Promise<void> {
     if (!this.pref) return;
     await this.pref.put(KEY_FLOATING_BALL, enabled);
+    await this.pref.flush();
+  }
+
+  // === 截图记录 ===
+  async getCapturedScreenshots<T>(): Promise<T[]> {
+    if (!this.pref) return [];
+    try {
+      const raw = (await this.pref.get(KEY_CAPTURED_SCREENSHOTS, '[]')) as string;
+      const parsed = JSON.parse(raw) as T[];
+      return parsed || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async addCapturedScreenshot<T>(item: T): Promise<void> {
+    if (!this.pref) return;
+    const list = await this.getCapturedScreenshots<T>();
+    list.push(item);
+    await this.pref.put(KEY_CAPTURED_SCREENSHOTS, JSON.stringify(list));
+    await this.pref.flush();
+  }
+
+  async removeCapturedScreenshot(path: string): Promise<void> {
+    if (!this.pref) return;
+    const list = await this.getCapturedScreenshots<{ path: string }>();
+    const filtered = list.filter((it) => it.path !== path);
+    await this.pref.put(KEY_CAPTURED_SCREENSHOTS, JSON.stringify(filtered));
     await this.pref.flush();
   }
 

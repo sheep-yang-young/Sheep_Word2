@@ -23,6 +23,7 @@ import { CustomImportPage } from './CustomImportPage';
 import { promptAction, router } from '@kit.ArkUI'; // [修复] 补充 router 导入
 import { StorePage } from './StorePage';
 import { CloudBook, CloudBookManager } from '../utils/CloudBookManager';
+import { ScreenshotGalleryPage } from './ScreenshotGalleryPage';
 
 const LOCAL_BOOKS: CloudBook[] = [
   { id: 'local_cet4', name: 'CET-4', category: 'English', size: '内置', desc: '大学英语四级核心词汇', version: 1 },
@@ -45,6 +46,7 @@ struct Index {
 
   // [修复] 监听全局跳转请求 (必须定义在 struct 内部)
   @StorageProp('NavigateToCapsuleImport') @Watch('onNavigateRequest') navigateFlag: boolean = false;
+  @StorageProp('NavigateToScreenshotBox') @Watch('onNavigateScreenshotRequest') navigateScreenshotFlag: boolean = false;
 
   onNavigateRequest() {
     if (this.navigateFlag) {
@@ -55,11 +57,17 @@ struct Index {
     }
   }
 
+  onNavigateScreenshotRequest() {
+    if (this.navigateScreenshotFlag) {
+      AppStorage.setOrCreate('NavigateToScreenshotBox', false);
+      router.pushUrl({ url: 'pages/ScreenshotGalleryPage' });
+    }
+  }
+
   async aboutToAppear(): Promise<void> {
     const context = getContext(this) as common.UIAbilityContext;
     await PreferenceManager.getInstance().init(context);
     await DatabaseManager.getInstance().init(context);
-
     this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
 
     this.isFirstLaunch = await PreferenceManager.getInstance().isFirstLaunch();
@@ -111,6 +119,7 @@ struct Index {
     else if (name === 'PodcastPage') { PodcastPage() }
     else if (name === 'CustomImportPage') { CustomImportPage() }
     else if (name === 'StorePage') { StorePage() }
+    else if (name === 'ScreenshotGalleryPage') { ScreenshotGalleryPage() }
   }
 
   @Builder
@@ -555,6 +564,13 @@ struct HomePage {
           Row({ space: 12 }) {
             this.QuickActionCard('开始喂草', '背单词', '#0A59F7', $r('sys.symbol.play_circle'), () => { this.pageStack.pushPath({ name: 'ReviewPage' }) })
             this.QuickActionCard('每日新闻', 'China Daily', '#FA8C16', $r('sys.symbol.doc_text'), () => { this.pageStack.pushPath({ name: 'DailyNewsPage' }) })
+          }.padding({ left: 20, right: 20 })
+
+          Row({ space: 12 }) {
+            this.QuickActionCard('截图识词', '查看自动截图', '#13C2C2', $r('sys.symbol.camera_viewfinder'), () => {
+              this.pageStack.pushPath({ name: 'ScreenshotGalleryPage' });
+            })
+            Blank().layoutWeight(1)
           }.padding({ left: 20, right: 20 })
 
           Column() {
