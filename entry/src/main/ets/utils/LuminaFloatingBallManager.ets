@@ -1,6 +1,7 @@
 import hilog from '@ohos.hilog';
-import { common, missionManager, Want } from '@kit.AbilityKit';
+import { common, Want } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import missionManager from '@ohos.app.ability.missionManager';
 import floatingBall from '@ohos.window.floatingBall';
 import { CapsuleFlow } from './CapsuleFlow';
 
@@ -98,7 +99,7 @@ export class LuminaFloatingBallManager {
     }
   }
 
-  private onBallClick(): void {
+  private async onBallClick(): Promise<void> {
     hilog.info(DOMAIN, TAG, 'onBallClick invoked');
 
     if (!this.ctx) {
@@ -136,11 +137,43 @@ export class LuminaFloatingBallManager {
 
     hilog.info(DOMAIN, TAG, 'ball click -> startAbility with want=%{public}s', JSON.stringify(want));
 
+    const resumed = await this.moveMissionToFrontIfExists(bundleName, abilityName);
+    if (resumed) {
+      hilog.info(DOMAIN, TAG, 'mission moved to front, skip starting new ability');
+      return;
+    }
+
     this.ctx.startAbility(want).then(() => {
       hilog.info(DOMAIN, TAG, 'startAbility success');
     }).catch((err: BusinessError) => {
       hilog.error(DOMAIN, TAG, 'startAbility failed code=%{public}d detail=%{public}s', err.code, JSON.stringify(err));
     });
+  }
+
+  private async moveMissionToFrontIfExists(bundleName: string, abilityName: string): Promise<boolean> {
+    if (!bundleName || !abilityName) {
+      hilog.warn(DOMAIN, TAG, 'moveMissionToFrontIfExists skipped: bundleName or abilityName missing');
+      return false;
+    }
+
+    try {
+      const missions: missionManager.MissionInfo[] = await missionManager.getMissionInfos(bundleName, 20);
+      const target = missions.find((info: missionManager.MissionInfo) =>
+        info.want?.bundleName === bundleName && info.want?.abilityName === abilityName);
+
+      if (!target) {
+        hilog.info(DOMAIN, TAG, 'No existing mission found for %{public}s/%{public}s', bundleName, abilityName);
+        return false;
+      }
+
+      await missionManager.moveMissionToFront(target.missionId);
+      hilog.info(DOMAIN, TAG, 'Moved mission %{public}d to front', target.missionId);
+      return true;
+    } catch (err) {
+      const error = err as BusinessError;
+      hilog.warn(DOMAIN, TAG, 'moveMissionToFrontIfExists failed: %{public}s', JSON.stringify(error));
+      return false;
+    }
   }
 
   private logContext(): void {
