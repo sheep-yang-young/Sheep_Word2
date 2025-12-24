@@ -5,6 +5,7 @@ import { DatabaseManager } from '../utils/DatabaseManager';
 import { PreferenceManager } from '../utils/PreferenceManager';
 import { LuminaFloatingBallManager } from '../utils/LuminaFloatingBallManager';
 import { CapsuleFlow } from '../utils/CapsuleFlow';
+import { LuminaLog } from '../utils/LuminaLog';
 
 export default class EntryAbility extends UIAbility {
   private stageRef: window.WindowStage | null = null;
@@ -12,6 +13,7 @@ export default class EntryAbility extends UIAbility {
   private readonly tag: string = 'EntryAbility';
 
   async onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): Promise<void> {
+    LuminaLog.i(`EntryAbility.onCreate want=${JSON.stringify(want)} parameters=${JSON.stringify(want?.parameters)}`);
     await PreferenceManager.getInstance().init(this.context);
     await DatabaseManager.getInstance().init(this.context);
 
@@ -25,7 +27,7 @@ export default class EntryAbility extends UIAbility {
 
     const p = want && want.parameters ? want.parameters : undefined;
     if (p && (p['openCapsuleImport'] === true)) {
-      hilog.info(this.domain, this.tag, 'onCreate detected openCapsuleImport flag, mark pending');
+      LuminaLog.i('EntryAbility.onCreate detected openCapsuleImport');
       CapsuleFlow.markAutoPickPending();
     }
   }
@@ -49,7 +51,7 @@ export default class EntryAbility extends UIAbility {
     const auto = CapsuleFlow.consumeAutoPickPending();
     if (auto) {
       // 触发全局跳转
-      hilog.info(this.domain, this.tag, 'auto-pick flag consumed, navigating to CapsuleImport');
+      LuminaLog.i('EntryAbility.onWindowStageCreate triggering NavigateToCapsuleImport');
       AppStorage.setOrCreate('NavigateToCapsuleImport', true);
     }
     windowStage.loadContent('pages/Index');
@@ -61,12 +63,13 @@ export default class EntryAbility extends UIAbility {
   }
 
   onNewWant(want: Want): void {
-    hilog.info(this.domain, this.tag, 'onNewWant received=%{public}s', JSON.stringify(want));
+    LuminaLog.i(`EntryAbility.onNewWant want=${JSON.stringify(want)} parameters=${JSON.stringify(want?.parameters)}`);
     const p = want && want.parameters ? want.parameters : undefined;
     if (p && (p['openCapsuleImport'] === true)) {
-      hilog.info(this.domain, this.tag, 'onNewWant detected openCapsuleImport flag, trigger navigation');
+      LuminaLog.i('EntryAbility.onNewWant detected openCapsuleImport');
       CapsuleFlow.markAutoPickPending();
       // 触发 UI 跳转
+      LuminaLog.i('EntryAbility.onNewWant triggering NavigateToCapsuleImport');
       AppStorage.setOrCreate('NavigateToCapsuleImport', true);
     }
   }
