@@ -3,8 +3,7 @@ import { window } from '@kit.ArkUI';
 import { DatabaseManager } from '../utils/DatabaseManager';
 import { PreferenceManager } from '../utils/PreferenceManager';
 
-// ✅ 新增
-import { FloatingBallManager } from '../utils/FloatingBallManager';
+import { FloatingCapsuleManager } from '../utils/FloatingCapsuleManager';
 import { LuminaLog } from '../utils/LuminaLog';
 
 export default class EntryAbility extends UIAbility {
@@ -20,10 +19,10 @@ export default class EntryAbility extends UIAbility {
 
     // ✅ 新增：把 context 交给闪控球管理器 + 打日志
     try {
-      FloatingBallManager.getInstance().init(this.context);
+      FloatingCapsuleManager.getInstance().init(this.context);
       LuminaLog.i('EntryAbility onCreate: init FloatingBallManager OK');
-    } catch (err) {
-      LuminaLog.e(`EntryAbility onCreate: init FloatingBallManager FAILED: ${LuminaLog.err(err as Object)}`);
+    } catch (err: unknown) {
+      LuminaLog.e(`EntryAbility onCreate: init FloatingBallManager FAILED: ${LuminaLog.err(err)}`);
     }
   }
 
@@ -45,15 +44,15 @@ export default class EntryAbility extends UIAbility {
     windowStage.loadContent('pages/Index');
 
     // ✅ 新增：启动闪控球（不影响你现有页面/沉浸式逻辑）
-    FloatingBallManager.getInstance().start().catch((err) => {
-      LuminaLog.e(`FloatingBall start() FAILED: ${LuminaLog.err(err as Object)}`);
+    FloatingCapsuleManager.getInstance().start().catch((err: unknown) => {
+      LuminaLog.e(`FloatingBall start() FAILED: ${LuminaLog.err(err)}`);
     });
   }
 
   onDestroy(): void {
     // ✅ 新增：退出时停止闪控球
-    FloatingBallManager.getInstance().stop().catch((err) => {
-      LuminaLog.e(`FloatingBall stop() FAILED: ${LuminaLog.err(err as Object)}`);
+    FloatingCapsuleManager.getInstance().stop().catch((err: unknown) => {
+      LuminaLog.e(`FloatingBall stop() FAILED: ${LuminaLog.err(err)}`);
     });
   }
 }
