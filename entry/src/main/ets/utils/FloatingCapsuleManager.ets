@@ -4,9 +4,27 @@ import { textRecognition } from '@kit.CoreVisionKit'; // 鸿蒙端侧 OCR
 import { image } from '@kit.ImageKit';
 import { DatabaseManager } from './DatabaseManager';
 import { Word } from '../model/WordModel';
-// 新的屏幕捕获 API（端上存在即可调用，缺失时自动降级）
-// @ts-ignore
-import { screenCapture } from '@kit.ScreenCaptureKit';
+
+interface ScreenCaptureNamespace {
+  createScreenCapture?: () => ScreenCaptureCreator;
+}
+
+interface ScreenCaptureCreator {
+  start?: (options: ScreenCaptureOptions) => Promise<ScreenCaptureSession | undefined>;
+}
+
+interface ScreenCaptureOptions {
+  captureMode: string;
+}
+
+interface ScreenCaptureSession {
+  capture?: () => Promise<ScreenCaptureFrame | undefined>;
+}
+
+interface ScreenCaptureFrame {
+  image?: ArrayBufferLike;
+  pixelMap?: image.PixelMap;
+}
 
 export interface CapsuleWordCandidate {
   spelling: string;
@@ -127,7 +145,7 @@ export class FloatingCapsuleManager {
   /**
    * 将用户勾选的单词导入指定词书
    */
-  async confirmImport(targetBookId: string, selected: CapsuleWordCandidate[]): Promise<{ added: number; untranslated: string[] }> {
+  async confirmImport(targetBookId: string, selected: CapsuleWordCandidate[]): Promise<CapsuleImportResult> {
     const bookId = (targetBookId && targetBookId.trim().length > 0) ? targetBookId.trim() : 'Captured_Words';
     const wordsToAdd: Word[] = [];
     const untranslated: string[] = [];
@@ -154,7 +172,7 @@ export class FloatingCapsuleManager {
   private async captureCurrentScreen(): Promise<image.PixelMap | null> {
     // 尝试新的 ScreenCaptureKit
     try {
-      const creator: any = (screenCapture as any)?.createScreenCapture?.();
+      const creator = this.createScreenCapture();
       if (creator) {
         const session = await creator.start?.({ captureMode: 'IMAGE' });
         const frame = await session?.capture?.();
@@ -165,7 +183,7 @@ export class FloatingCapsuleManager {
           return map;
         }
         if (frame?.pixelMap) {
-          return frame.pixelMap as image.PixelMap;
+          return frame.pixelMap;
         }
       }
     } catch (e) {
@@ -174,10 +192,11 @@ export class FloatingCapsuleManager {
 
     // 退化方案：调用 window 快照（部分设备支持）
     try {
-      const mainWindow: any = await (window as any).getLastWindow?.(this.context);
-      if (mainWindow && typeof mainWindow.snapshot === 'function') {
-        const snap = await mainWindow.snapshot();
-        return snap as image.PixelMap;
+      const mainWindowGetter = (window as unknown as { getLastWindow?: (ctx: common.UIAbilityContext | null) => Promise<window.Window | null> }).getLastWindow;
+      const mainWindow = mainWindowGetter ? await mainWindowGetter(this.context) : null;
+      const snapshotFn = mainWindow as unknown as { snapshot?: () => Promise<image.PixelMap> };
+      if (snapshotFn?.snapshot) {
+        return await snapshotFn.snapshot();
       }
     } catch (e) {
       console.warn('[Capsule] window.snapshot unavailable');
@@ -225,7 +244,7 @@ export class FloatingCapsuleManager {
   private async tryLocalTranslate(spelling: string): Promise<string> {
     // 保持离线：只尝试本地翻译能力，缺失则返回空
     try {
-      const translator: any = (globalThis as any).systemPlugin?.translation || (globalThis as any).translator;
+      const translator = this.getLocalTranslator();
       if (translator && typeof translator.translate === 'function') {
         const result = await translator.translate({ text: spelling, sourceLang: 'en', targetLang: 'zh' });
         if (result?.text) return String(result.text);
@@ -235,4 +254,30 @@ export class FloatingCapsuleManager {
     }
     return '';
   }
+
+  private createScreenCapture(): ScreenCaptureCreator | null {
+    const namespace = (globalThis as unknown as { screenCapture?: ScreenCaptureNamespace }).screenCapture;
+    if (namespace?.createScreenCapture) {
+      return namespace.createScreenCapture();
+    }
+    return null;
+  }
+
+  private getLocalTranslator(): LocalTranslator | null {
+    const plugin = (globalThis as unknown as { systemPlugin?: { translation?: LocalTranslator } }).systemPlugin;
+    if (plugin?.translation) {
+      return plugin.translation;
+    }
+    const fallback = (globalThis as unknown as { translator?: LocalTranslator }).translator;
+    return fallback ?? null;
+  }
+}
+
+interface LocalTranslator {
+  translate?: (options: { text: string; sourceLang: string; targetLang: string }) => Promise<{ text?: string }>;
+}
+
+interface CapsuleImportResult {
+  added: number;
+  untranslated: string[];
 }
