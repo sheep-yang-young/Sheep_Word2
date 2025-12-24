@@ -109,26 +109,37 @@ export class LuminaFloatingBallManager {
     // 标记：进入页面后自动拉起选择截图
     CapsuleFlow.markAutoPickPending();
 
-    const bundleName = this.ctx.abilityInfo?.bundleName ?? '';
-    const moduleName = this.ctx.abilityInfo?.moduleName ?? 'entry';
+    const abilityInfo = this.ctx.abilityInfo;
+    if (!abilityInfo || !abilityInfo.bundleName || !abilityInfo.name) {
+      hilog.error(DOMAIN, TAG, 'onBallClick aborted: invalid abilityInfo=%{public}s', JSON.stringify(abilityInfo));
+      return;
+    }
+
+    const fallbackBundleName = 'com.Sheep.Lumina';
+    const fallbackModuleName = 'entry';
+    const fallbackAbilityName = 'EntryAbility';
+
+    const bundleName = abilityInfo.bundleName.trim() || fallbackBundleName;
+    const moduleName = abilityInfo.moduleName?.trim() || fallbackModuleName;
+    const abilityName = abilityInfo.name.trim() || fallbackAbilityName;
 
     const want: Want = {
       deviceId: '',
       bundleName: bundleName,
       moduleName: moduleName,
-      abilityName: 'EntryAbility',
+      abilityName: abilityName,
       parameters: {
         // 这个参数将在 EntryAbility 中被捕获
         openCapsuleImport: true
       }
     };
 
-    hilog.info(DOMAIN, TAG, 'ball click -> startAbility: %{public}s', JSON.stringify(want));
+    hilog.info(DOMAIN, TAG, 'ball click -> startAbility with want=%{public}s', JSON.stringify(want));
 
     this.ctx.startAbility(want).then(() => {
       hilog.info(DOMAIN, TAG, 'startAbility success');
     }).catch((err: BusinessError) => {
-      hilog.error(DOMAIN, TAG, 'startAbility failed=%{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, TAG, 'startAbility failed code=%{public}d detail=%{public}s', err.code, JSON.stringify(err));
     });
   }
 
