@@ -37,6 +37,7 @@ export class LuminaFloatingBallManager {
 
     try {
       hilog.info(DOMAIN, TAG, 'Attempting to create floating ball...');
+      this.logContext();
 
       // [修复] 参数必须包裹在对象中
       this.controller = await floatingBall.create({ context: this.ctx });
@@ -46,8 +47,11 @@ export class LuminaFloatingBallManager {
         return;
       }
 
+      hilog.info(DOMAIN, TAG, 'FloatingBallController created');
+
       // 设置点击监听
       this.controller.on('click', () => {
+        hilog.info(DOMAIN, TAG, 'onClick event received from floating ball');
         this.onBallClick();
       });
 
@@ -65,7 +69,7 @@ export class LuminaFloatingBallManager {
 
       await this.controller.startFloatingBall(params);
       this.started = true;
-      hilog.info(DOMAIN, TAG, 'startFloatingBall OK');
+      hilog.info(DOMAIN, TAG, 'startFloatingBall OK with params=%{public}s', JSON.stringify(params));
     } catch (err) {
       const error = err as BusinessError;
       hilog.error(DOMAIN, TAG, 'startFloatingBall FAILED: %{public}s', JSON.stringify(error));
@@ -95,12 +99,23 @@ export class LuminaFloatingBallManager {
   }
 
   private onBallClick(): void {
-    if (!this.ctx) return;
+    hilog.info(DOMAIN, TAG, 'onBallClick invoked');
+
+    if (!this.ctx) {
+      hilog.error(DOMAIN, TAG, 'onBallClick aborted: context missing');
+      return;
+    }
 
     // 标记：进入页面后自动拉起选择截图
     CapsuleFlow.markAutoPickPending();
 
+    const bundleName = this.ctx.abilityInfo?.bundleName ?? '';
+    const moduleName = this.ctx.abilityInfo?.moduleName ?? 'entry';
+
     const want: Want = {
+      deviceId: '',
+      bundleName: bundleName,
+      moduleName: moduleName,
       abilityName: 'EntryAbility',
       parameters: {
         // 这个参数将在 EntryAbility 中被捕获
@@ -108,9 +123,21 @@ export class LuminaFloatingBallManager {
       }
     };
 
-    hilog.info(DOMAIN, TAG, 'ball click -> startAbility to CapsuleImportPage');
-    this.ctx.startAbility(want).catch((err: BusinessError) => {
+    hilog.info(DOMAIN, TAG, 'ball click -> startAbility: %{public}s', JSON.stringify(want));
+
+    this.ctx.startAbility(want).then(() => {
+      hilog.info(DOMAIN, TAG, 'startAbility success');
+    }).catch((err: BusinessError) => {
       hilog.error(DOMAIN, TAG, 'startAbility failed=%{public}s', JSON.stringify(err));
     });
+  }
+
+  private logContext(): void {
+    if (!this.ctx) {
+      hilog.warn(DOMAIN, TAG, 'logContext skipped: ctx missing');
+      return;
+    }
+
+    hilog.info(DOMAIN, TAG, 'context ability=%{public}s', JSON.stringify(this.ctx.abilityInfo));
   }
 }
