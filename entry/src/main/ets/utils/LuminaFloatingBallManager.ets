@@ -1,5 +1,5 @@
 import hilog from '@ohos.hilog';
-import { common, Want } from '@kit.AbilityKit';
+import { common, missionManager, Want } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import floatingBall from '@ohos.window.floatingBall';
 import { CapsuleFlow } from './CapsuleFlow';

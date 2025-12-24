@@ -1,4 +1,5 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import hilog from '@ohos.hilog';
 import { window } from '@kit.ArkUI';
 import { DatabaseManager } from '../utils/DatabaseManager';
 import { PreferenceManager } from '../utils/PreferenceManager';
@@ -8,6 +9,8 @@ import { LuminaLog } from '../utils/LuminaLog';
 
 export default class EntryAbility extends UIAbility {
   private stageRef: window.WindowStage | null = null;
+  private readonly domain: number = 0xA0A03D;
+  private readonly tag: string = 'EntryAbility';
 
   async onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): Promise<void> {
     LuminaLog.i(`EntryAbility.onCreate want=${JSON.stringify(want)} parameters=${JSON.stringify(want?.parameters)}`);
@@ -19,6 +22,8 @@ export default class EntryAbility extends UIAbility {
     } catch (err) {}
 
     LuminaFloatingBallManager.getInstance().init(this.context);
+
+    hilog.info(this.domain, this.tag, 'onCreate want=%{public}s', JSON.stringify(want));
 
     const p = want && want.parameters ? want.parameters : undefined;
     if (p && (p['openCapsuleImport'] === true)) {
