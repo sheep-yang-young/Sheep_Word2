@@ -118,7 +118,7 @@ export struct SettingsPage {
                     .padding({ left: 4, right: 4, top: 2, bottom: 2 })
                     .borderRadius(4)
                 }
-                Text('开启后常驻桌面，点击即可截图查词')
+                Text('开启后常驻桌面，点击会自动截图并保存到“截图盒”')
                   .fontSize(12)
                   .fontColor('#999')
               }
@@ -152,7 +152,7 @@ export struct SettingsPage {
             .width('100%')
             .padding(16)
 
-            Text('请在要导入的页面先截图，然后点击闪控球唤起应用上传')
+            Text('截图会自动进入“截图盒”，可在主页快速打开并执行 OCR 导入')
               .fontSize(12)
               .fontColor('#999')
               .padding({ left: 16, right: 16, bottom: 12 })

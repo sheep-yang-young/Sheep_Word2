@@ -74,9 +74,12 @@
             "EntryAbility"
           ],
           "when": "inuse"
-        },
+        }
+      },
+      {
+        "name": "ohos.permission.CAPTURE_SCREEN"
       }
-        ],
+    ],
     "metadata": [
       {
         "name": "network_security_config",
