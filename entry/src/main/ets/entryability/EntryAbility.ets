@@ -1,4 +1,5 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import hilog from '@ohos.hilog';
 import { window } from '@kit.ArkUI';
 import { DatabaseManager } from '../utils/DatabaseManager';
 import { PreferenceManager } from '../utils/PreferenceManager';
@@ -7,6 +8,8 @@ import { CapsuleFlow } from '../utils/CapsuleFlow';
 
 export default class EntryAbility extends UIAbility {
   private stageRef: window.WindowStage | null = null;
+  private readonly domain: number = 0xA0A03D;
+  private readonly tag: string = 'EntryAbility';
 
   async onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): Promise<void> {
     await PreferenceManager.getInstance().init(this.context);
@@ -18,8 +21,11 @@ export default class EntryAbility extends UIAbility {
 
     LuminaFloatingBallManager.getInstance().init(this.context);
 
+    hilog.info(this.domain, this.tag, 'onCreate want=%{public}s', JSON.stringify(want));
+
     const p = want && want.parameters ? want.parameters : undefined;
     if (p && (p['openCapsuleImport'] === true)) {
+      hilog.info(this.domain, this.tag, 'onCreate detected openCapsuleImport flag, mark pending');
       CapsuleFlow.markAutoPickPending();
     }
   }
@@ -43,6 +49,7 @@ export default class EntryAbility extends UIAbility {
     const auto = CapsuleFlow.consumeAutoPickPending();
     if (auto) {
       // 触发全局跳转
+      hilog.info(this.domain, this.tag, 'auto-pick flag consumed, navigating to CapsuleImport');
       AppStorage.setOrCreate('NavigateToCapsuleImport', true);
     }
     windowStage.loadContent('pages/Index');
@@ -54,8 +61,10 @@ export default class EntryAbility extends UIAbility {
   }
 
   onNewWant(want: Want): void {
+    hilog.info(this.domain, this.tag, 'onNewWant received=%{public}s', JSON.stringify(want));
     const p = want && want.parameters ? want.parameters : undefined;
     if (p && (p['openCapsuleImport'] === true)) {
+      hilog.info(this.domain, this.tag, 'onNewWant detected openCapsuleImport flag, trigger navigation');
       CapsuleFlow.markAutoPickPending();
       // 触发 UI 跳转
       AppStorage.setOrCreate('NavigateToCapsuleImport', true);
