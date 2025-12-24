@@ -37,6 +37,10 @@ struct Index {
   @Provide('pageStack') pageStack: NavPathStack = new NavPathStack();
   @Provide refreshFlag: number = 0;
 
+  @State isShowSettingsSheet: boolean = false;
+  // [关键修复] 将 dailyLimit 提升到父组件，确保主页和设置页同步
+  @State dailyLimit: number = 20;
+
   @State isFirstLaunch: boolean = false;
   @State isReady: boolean = false;
 
@@ -44,6 +48,9 @@ struct Index {
     const context = getContext(this) as common.UIAbilityContext;
     await PreferenceManager.getInstance().init(context);
     await DatabaseManager.getInstance().init(context);
+
+    // 初始化时获取一次 dailyLimit
+    this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
 
     this.isFirstLaunch = await PreferenceManager.getInstance().isFirstLaunch();
     if (this.isFirstLaunch) {
@@ -79,7 +86,6 @@ struct Index {
   PagesMap(name: string) {
     if (name === 'ReviewPage') { ReviewPage() }
     else if (name === 'VocabularyPage') { VocabularyPage() }
-    else if (name === 'SettingsPage') { SettingsPage() }
     else if (name === 'ZenPage') { ZenPage() }
     else if (name === 'AboutPage') { AboutPage() }
     else if (name === 'SpellChallengePage') { SpellChallengePage() }
@@ -94,6 +100,17 @@ struct Index {
     else if (name === 'StorePage') { StorePage() }
   }
 
+  @Builder
+  SettingsSheetBuilder() {
+    Column() {
+      // 传递 @Link dailyLimit
+      SettingsPage({ dailyLimit: $dailyLimit })
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#F5F7FA')
+  }
+
   build() {
     Stack() {
       if (this.isReady) {
@@ -106,7 +123,11 @@ struct Index {
           }).zIndex(999)
         } else {
           Navigation(this.pageStack) {
-            HomePage()
+            // 传递 @Link dailyLimit
+            HomePage({
+              isShowSettingsSheet: $isShowSettingsSheet,
+              dailyLimit: $dailyLimit
+            })
           }
           .navDestination(this.PagesMap)
           .mode(NavigationMode.Stack)
@@ -116,6 +137,12 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .bindSheet($$this.isShowSettingsSheet, this.SettingsSheetBuilder(), {
+      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      backgroundColor: '#F5F7FA',
+      dragBar: false, // [关键修复] 关闭系统自带拖条，解决白条问题，我们在 SettingsPage 里自己画
+      blurStyle: BlurStyle.Thick
+    })
   }
 }
 
@@ -131,6 +158,10 @@ struct HomePage {
   @Consume('pageStack') pageStack: NavPathStack;
   @Consume @Watch('onRefreshTriggered') refreshFlag: number;
 
+  @Link isShowSettingsSheet: boolean;
+  // [关键修复] 接收父组件的 dailyLimit，实现自动同步
+  @Link dailyLimit: number;
+
   @State currentIndex: number = 0;
   @State stats: DashboardStats = new DashboardStats();
   @State chartData: number[] = [0, 0, 0, 0, 0];
@@ -140,13 +171,11 @@ struct HomePage {
 
   @State selectedBook: string = "请选择词书";
   @State reviewMode: number = 0;
-  @State dailyLimit: number = 20;
   @State currentSkinIndex: number = 0;
   @State sheepScale: number = 1;
 
   @State isShowBookSheet: boolean = false;
   @State bookList: CloudBook[] = [];
-  // [新增] 记录哪些书已经下载到了本地
   @State downloadedBooks: string[] = [];
   @State isSheetLoading: boolean = false;
   @State downloadingBookId: string = '';
@@ -171,12 +200,10 @@ struct HomePage {
 
   async aboutToAppear(): Promise<void> {
     this.refreshStats();
-    // 预加载本地书单，并检查下载状态
     this.bookList = [...LOCAL_BOOKS];
     await this.checkDownloadedStatus();
   }
 
-  // [新增] 遍历书单，检查每一本书是否在本地数据库中存在
   async checkDownloadedStatus() {
     const db = DatabaseManager.getInstance();
     const newDownloadedList: string[] = [];
@@ -207,7 +234,6 @@ struct HomePage {
       console.error('Fetch cloud books error:', e);
       promptAction.showToast({ message: '获取云端列表失败，请检查服务器配置' });
     } finally {
-      // 无论成功失败，都重新检查一下哪些书是已下载的
       await this.checkDownloadedStatus();
       this.isSheetLoading = false;
     }
@@ -223,7 +249,7 @@ struct HomePage {
 
     this.reviewMode = await pref.getReviewMode();
     this.selectedBook = await pref.getCurrentBook();
-    this.dailyLimit = await pref.getDailyLimit();
+    // this.dailyLimit = await pref.getDailyLimit(); // [删除] 不再从 pref 读，而是依赖 @Link
 
     const isValid = this.selectedBook && this.selectedBook !== "Default Library" && this.selectedBook !== "请选择词书";
     if (!isValid) {
@@ -298,7 +324,7 @@ struct HomePage {
     if (fileName) {
       const count = await WordImporter.importFromRawFile(context, fileName, book.name);
       if (count > 0) {
-        await this.checkDownloadedStatus(); // 更新状态
+        await this.checkDownloadedStatus();
         await this.switchBookLogic(book.name);
       } else {
         promptAction.showToast({ message: '内置词库加载失败' });
@@ -314,7 +340,7 @@ struct HomePage {
       if (path) {
         const count = await WordImporter.importJsonFileFromPath(context, path, book.name);
         if (count > 0) {
-          await this.checkDownloadedStatus(); // 关键：更新已下载列表状态
+          await this.checkDownloadedStatus();
           await this.switchBookLogic(book.name);
         } else {
           promptAction.showToast({ message: '导入失败：文件格式错误' });
@@ -401,10 +427,6 @@ struct HomePage {
               if (this.downloadingBookId === book.id) {
                 LoadingProgress().width(24).height(24).color('#0A59F7')
               } else {
-                // [核心修复] 按钮状态逻辑
-                // 1. 如果正在使用 -> 显示"使用中"
-                // 2. 如果已存在于本地 (checkDownloadedStatus 检测过) -> 显示"切换"
-                // 3. 否则 -> 显示"下载"
                 Button(this.selectedBook === book.name ? '使用中' : (this.downloadedBooks.includes(book.name) ? '切换' : '下载'))
                   .fontSize(12)
                   .height(28)
@@ -435,6 +457,7 @@ struct HomePage {
 
   @Builder HomeContent() {
     Column() {
+      // Top Bar
       Row() {
         Column({ space: 4 }) {
           Text('当前牧场').fontSize(12).fontColor('#999')
@@ -460,33 +483,54 @@ struct HomePage {
           SymbolGlyph($r('sys.symbol.moon')).fontSize(22).fontColor(['#FFFFFF']).fontWeight(FontWeight.Medium)
         }.width(36).height(36).backgroundColor('#ffb689ff').margin({ right: 12 }).onClick(() => { this.pageStack.pushPath({ name: 'ZenPage' }) })
 
-        SymbolGlyph($r('sys.symbol.gearshape')).fontSize(24).fontColor(['#333']).onClick(() => { this.pageStack.pushPath({ name: 'SettingsPage' }) })
+        SymbolGlyph($r('sys.symbol.gearshape'))
+          .fontSize(24)
+          .fontColor(['#333'])
+          .onClick(() => {
+            this.isShowSettingsSheet = true;
+          })
+          .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.85 })
       }
       .width('100%').padding({ top: 50, left: 24, right: 24, bottom: 10 })
 
       Scroll() {
         Column({ space: 20 }) {
+          // [关键修复] Lumina 互动卡片
           Stack({ alignContent: Alignment.Bottom }) {
+            // 背景卡
             Column()
               .width('100%').height(280)
               .backgroundColor(this.getTotalPending() > 0 ? '#E6F7FF' : '#F6FFED')
               .borderRadius(24).shadow({ radius: 20, color: 'rgba(0,0,0,0.05)' })
 
+            // 绵羊图像
             Column() {
               if (this.getTotalPending() > 0) {
                 Text(`还有 ${this.getTotalPending()} 个词没背...`).fontSize(12).fontColor('#fff').backgroundColor('#FF4D4F').padding(8).borderRadius(12).margin({ bottom: 10 })
               } else {
                 Text(`今日任务达成！`).fontSize(12).fontColor('#fff').backgroundColor('#52C41A').padding(8).borderRadius(12).margin({ bottom: 10 })
               }
-              Image(this.getSheepImage()).height(160).objectFit(ImageFit.Contain).scale({ x: this.sheepScale, y: this.sheepScale }).onClick(() => this.interactWithSheep())
-            }.padding({ bottom: 40 })
+              Image(this.getSheepImage())
+                .height(160)
+                .objectFit(ImageFit.Contain)
+                .scale({ x: this.sheepScale, y: this.sheepScale })
+                // [关键修复] 增加点击区域和层级
+                .onClick(() => this.interactWithSheep())
+            }
+            .padding({ bottom: 40 })
+            .zIndex(2) // [关键修复] 提升层级，防止被下方的 Row 遮挡点击
 
+            // 统计数据 (位于底部)
             Row() {
               Text(`Mastered: ${this.stats.mastered}`).fontSize(12).fontColor('#666').fontWeight(FontWeight.Bold)
               Blank()
               Text(`Daily Goal: ${this.stats.learnedToday}/${this.dailyLimit}`).fontSize(12).fontColor('#666').fontWeight(FontWeight.Bold)
-            }.width('100%').padding(20)
-          }.height(300).width('100%').padding({ left: 20, right: 20 })
+            }
+            .width('100%')
+            .padding(20)
+            .hitTestBehavior(HitTestMode.Transparent) // [关键修复] 让点击穿透这个 Row，防止遮挡小羊脚部
+          }
+          .height(300).width('100%').padding({ left: 20, right: 20 })
 
           Row({ space: 12 }) {
             this.QuickActionCard('开始喂草', '背单词', '#0A59F7', $r('sys.symbol.play_circle'), () => { this.pageStack.pushPath({ name: 'ReviewPage' }) })
@@ -566,6 +610,7 @@ struct HomePage {
   }
 }
 
+// === ArchiveView 和 WoolWarehouseDialog 保持原样 ===
 @Component
 struct ArchiveView {
   @Link stats: DashboardStats;

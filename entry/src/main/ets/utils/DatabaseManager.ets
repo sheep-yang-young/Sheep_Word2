@@ -464,7 +464,28 @@ export class DatabaseManager {
       return a;
     }catch(e){return[0,0,0,0,0];}
   }
+  // 在 DatabaseManager 类中添加：
 
+  // 全局查找单词释义（返回第一个匹配的）
+  async findWordGlobal(spelling: string): Promise<Word | null> {
+    const s = this.rdbStore;
+    if (!s) return null;
+    try {
+      // 在所有词书中查找
+      const p = new relationalStore.RdbPredicates('words');
+      p.equalTo('spelling', spelling).limitAs(1);
+      const r = await s.query(p);
+      if (r.goToFirstRow()) {
+        const w = this.mapRowToWord(r);
+        r.close();
+        return w;
+      }
+      r.close();
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
   async recordKnowledgePractice(id: number, correct: boolean): Promise<void> { const s=this.rdbStore; if(!s)return; try{const res=await s.querySql('SELECT knowledgeScore, proficiency FROM words WHERE id=?',[id]); let score=0; let prof=0; if(res.goToFirstRow()){score=res.getLong(0)||0; prof=res.getLong(1)||0;} res.close(); const now=Date.now(); const delta=correct?5: -2; const newScore=Math.max(0, score + delta); const newProf=Math.min(100, Math.max(0, prof + (correct?3:0))); const v:ValuesBucket={knowledgeScore:newScore, proficiency:newProf, lastReviewTime:now, nextReviewTime:now + 24*60*60*1000}; const p=new relationalStore.RdbPredicates('words'); p.equalTo('id',id); await s.update(v,p); await this.logActivity(); }catch(e){} }
   async getSpellingReviewWords(bookId: string, limit: number = 20): Promise<Word[]> { const s=this.rdbStore; if(!s)return[]; try{const q=`SELECT * FROM words WHERE book_id=? AND lastReviewTime>0 ORDER BY proficiency ASC LIMIT ?`; const r=await s.querySql(q,[bookId,limit]); const w:Word[]=[]; while(r.goToNextRow())w.push(this.mapRowToWord(r)); r.close(); return w;}catch(e){return[];} }
 
@@ -482,5 +503,6 @@ export class DatabaseManager {
       proficiency: l('proficiency'), repetition: l('repetition'), interval: l('interval'), easeFactor: d('easeFactor'), lastReviewTime: l('lastReviewTime'), nextReviewTime: l('nextReviewTime'),
       proficiencySpelling: l('proficiencySpelling'), repetitionSpelling: l('repetitionSpelling'), intervalSpelling: l('intervalSpelling'), easeFactorSpelling: d('easeFactorSpelling') || 2.5, lastReviewTimeSpelling: l('lastReviewTimeSpelling'), nextReviewTimeSpelling: l('nextReviewTimeSpelling')
     };
+
   }
 }

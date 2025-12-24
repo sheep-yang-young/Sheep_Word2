@@ -47,12 +47,34 @@
           }
         ],
 
+      },
+      {
+        "name": "EntryFormAbility",
+        "srcEntry": "./ets/entryformability/EntryFormAbility.ets",
+        "label": "$string:EntryAbility_label",
+        "description": "$string:EntryAbility_desc",
+        "type": "form",
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
       }
     ],
     "requestPermissions": [
-
       {
         "name": "ohos.permission.VIBRATE"
+      },
+      // 允许应用创建系统悬浮窗
+      {
+        "name": "ohos.permission.SYSTEM_FLOAT_WINDOW",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
       }
     ],
     "metadata": [
