@@ -151,6 +151,11 @@ export struct SettingsPage {
             }
             .width('100%')
             .padding(16)
+
+            Text('请在要导入的页面先截图，然后点击闪控球唤起应用上传')
+              .fontSize(12)
+              .fontColor('#999')
+              .padding({ left: 16, right: 16, bottom: 12 })
           }
           .backgroundColor('#FFFFFF')
           .borderRadius(16)
