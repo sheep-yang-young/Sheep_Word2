@@ -1,12 +1,13 @@
 import hilog from '@ohos.hilog';
 
-type ErrorLike = {
+// [Fix] 使用 class 替代 interface/type，符合 ArkTS 严格模式要求
+class ErrorLike {
   code?: number | string;
   message?: string;
-};
+}
 
 export class LuminaLog {
-  private static readonly DOMAIN: number = 0xA03D; // 你日志里就是 A03D00
+  private static readonly DOMAIN: number = 0xA03D;
   private static readonly TAG: string = 'LuminaBall';
 
   static i(msg: string): void {
@@ -21,10 +22,15 @@ export class LuminaLog {
     hilog.error(LuminaLog.DOMAIN, LuminaLog.TAG, '%{public}s', msg);
   }
 
-  static err(err: unknown): string {
+  // [Fix] 接收 Object 类型，避免 catch 块传递 unknown 导致的编译错误
+  static err(err: Object | null | undefined): string {
+    if (!err) return '';
+
+    // 使用断言访问属性
     const errorObj = err as ErrorLike;
-    const code = errorObj && errorObj.code !== undefined ? String(errorObj.code) : '';
-    const message = errorObj && errorObj.message ? String(errorObj.message) : String(err);
+    const code = errorObj.code !== undefined ? String(errorObj.code) : '';
+    const message = errorObj.message ? String(errorObj.message) : String(err);
+
     return `code=${code} message=${message}`;
   }
 }

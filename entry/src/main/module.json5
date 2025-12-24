@@ -75,11 +75,8 @@
           ],
           "when": "inuse"
         },
-      },
-      {"name": "ohos.permission.CAPTURE_SCREEN",
-        "reason": "$string:capture_screen_reason",
-        "usedScene": { "abilities": ["EntryAbility"], "when": "inuse" }},
-      ],
+      }
+        ],
     "metadata": [
       {
         "name": "network_security_config",

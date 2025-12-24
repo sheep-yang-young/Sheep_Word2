@@ -1,132 +1,245 @@
+import hilog from '@ohos.hilog';
 import { common } from '@kit.AbilityKit';
-import floatingBall from '@ohos.window.floatingBall';
-import { LuminaLog } from './LuminaLog';
+import { textRecognition } from '@kit.CoreVisionKit';
+import { image } from '@kit.ImageKit';
+import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { fileIo } from '@kit.CoreFileKit';
+import { DatabaseManager } from './DatabaseManager';
+import { Word } from '../model/WordModel';
 
-type FloatingBallModule = typeof floatingBall & { isSupported?: () => boolean };
+const DOMAIN: number = 0xA0A03D;
+const TAG: string = 'LuminaOCR';
 
-export interface CapsuleWordCandidate {
-  spelling: string;
-  meaning?: string;
-  hasMeaning?: boolean;
+export class CapsuleWordCandidate {
+  spelling: string = '';
+  meaning: string = '';
+  phonetic: string = '';
+  hasMeaning: boolean = false;
 }
 
-export interface CapsuleRecognitionResult {
-  words: CapsuleWordCandidate[];
+export class CapsuleRecognitionResult {
+  words: CapsuleWordCandidate[] = [];
+  untranslated: string[] = [];
+  suggestedBook: string = '';
+}
+
+interface CapsuleImportResult {
+  added: number;
   untranslated: string[];
-  suggestedBook?: string;
+}
+
+interface TranslateOptions {
+  text: string;
+  sourceLang: string;
+  targetLang: string;
+}
+interface TranslateResult {
+  text?: string;
+}
+interface LocalTranslator {
+  translate(options: TranslateOptions): Promise<TranslateResult>;
+}
+
+interface GlobalTranslatorHost {
+  systemPlugin?: { translation?: LocalTranslator };
+  translator?: LocalTranslator;
 }
 
 export class FloatingCapsuleManager {
-  private static inst: FloatingCapsuleManager;
+  private static instance: FloatingCapsuleManager;
 
-  private ctx: common.UIAbilityContext | null = null;
-  private ctrl: floatingBall.FloatingBallController | null = null;
-  private started: boolean = false;
-  private recognitionListener: ((payload: CapsuleRecognitionResult) => void) | null = null;
+  private context: common.UIAbilityContext | null = null;
+  private isProcessing: boolean = false;
+
+  private onRecognized: ((payload: CapsuleRecognitionResult) => void) | null = null;
+  private lastResult: CapsuleRecognitionResult | null = null;
 
   private constructor() {}
 
   static getInstance(): FloatingCapsuleManager {
-    if (!FloatingCapsuleManager.inst) {
-      FloatingCapsuleManager.inst = new FloatingCapsuleManager();
+    if (!FloatingCapsuleManager.instance) {
+      FloatingCapsuleManager.instance = new FloatingCapsuleManager();
     }
-    return FloatingCapsuleManager.inst;
+    return FloatingCapsuleManager.instance;
   }
 
   init(context: common.UIAbilityContext): void {
-    this.ctx = context;
+    this.context = context;
   }
 
-  setRecognitionListener(listener: (payload: CapsuleRecognitionResult) => void): void {
-    this.recognitionListener = listener;
+  setRecognitionListener(callback: (payload: CapsuleRecognitionResult) => void): void {
+    this.onRecognized = callback;
+    if (this.lastResult) callback(this.lastResult);
   }
 
-  async showCapsule(context: common.UIAbilityContext): Promise<void> {
-    this.init(context);
-    await this.start();
+  getLastResult(): CapsuleRecognitionResult | null {
+    return this.lastResult;
   }
 
-  async start(): Promise<void> {
-    if (this.started) return;
-    if (!this.ctx) {
-      LuminaLog.w('Floating capsule start skipped: context not initialized');
-      return;
-    }
+  async triggerImportByUserPicker(): Promise<number> {
+    if (this.isProcessing || !this.context) return 0;
+    this.isProcessing = true;
 
-    const moduleWithSupport = floatingBall as FloatingBallModule;
-    const supported = moduleWithSupport.isSupported ? moduleWithSupport.isSupported() : true;
-    LuminaLog.i(`floatingBall.isSupported=${supported}`);
-    if (!supported) return;
-
-    const controller = await floatingBall.create(this.ctx);
-    this.ctrl = controller;
-
-    if (!this.ctrl) {
-      LuminaLog.w('Floating capsule controller is null after creation');
-      return;
-    }
-
-    // 点击事件：这里是你要的“点球触发动作”
-    this.ctrl.on('click', () => {
-      LuminaLog.i('FloatingBall click');
-      this.onClick();
-    });
-
-    // 可选：状态变化日志
-    this.ctrl.on('stateChange', (state: floatingBall.FloatingBallState) => {
-      LuminaLog.i(`FloatingBall stateChange=${state}`);
-    });
-
-    // params 以你本机 SDK 的 d.ts 为准（API20）
-    const params = {} as floatingBall.FloatingBallParams;
+    let pixelMap: image.PixelMap | null = null;
+    let fd: number | null = null;
 
     try {
-      await this.ctrl.startFloatingBall(params);
-      this.started = true;
-      LuminaLog.i('startFloatingBall OK');
-    } catch (err) {
-      LuminaLog.e(`startFloatingBall FAILED: ${LuminaLog.err(err)}`);
-    }
-  }
+      const uri: string | null = await this.pickOneImageUri();
+      if (!uri) return 0;
 
-  async stop(): Promise<void> {
-    if (!this.ctrl) return;
-    try {
-      await this.ctrl.stopFloatingBall();
-      LuminaLog.i('stopFloatingBall OK');
+      const decode = await this.decodePixelMapFromUri(uri);
+      pixelMap = decode.pixelMap;
+      fd = decode.fd;
+
+      const visionInfo: textRecognition.VisionInfo = { pixelMap: pixelMap };
+      const textResult = await textRecognition.recognizeText(visionInfo);
+      const fullText: string = (textResult && textResult.value) ? String(textResult.value) : '';
+
+      hilog.info(DOMAIN, TAG, 'OCR text length=%{public}d', fullText.length);
+
+      const parsed: CapsuleRecognitionResult = await this.parseWords(fullText);
+      this.lastResult = parsed;
+
+      if (this.onRecognized) this.onRecognized(parsed);
+
+      return parsed.words.length;
     } catch (err) {
-      LuminaLog.e(`stopFloatingBall FAILED: ${LuminaLog.err(err)}`);
+      hilog.error(DOMAIN, TAG, 'Import failed=%{public}s', JSON.stringify(err));
+      return 0;
     } finally {
-      this.ctrl = null;
-      this.started = false;
+      if (pixelMap) {
+        try { await pixelMap.release(); } catch (e) {}
+      }
+      if (fd !== null) {
+        try { fileIo.closeSync(fd); } catch (e) {}
+      }
+      this.isProcessing = false;
     }
   }
 
-  async triggerImageImport(): Promise<number> {
-    LuminaLog.i('triggerImageImport invoked');
-    if (this.recognitionListener) {
-      const mockPayload: CapsuleRecognitionResult = {
-        words: [],
-        untranslated: [],
-        suggestedBook: undefined
+  async confirmImport(targetBookId: string, selected: CapsuleWordCandidate[]): Promise<CapsuleImportResult> {
+    const bookId: string = (targetBookId && targetBookId.trim().length > 0) ? targetBookId.trim() : 'Captured_Words';
+
+    const wordsToAdd: Word[] = [];
+    const untranslated: string[] = [];
+
+    for (const item of selected) {
+      const w: Word = {
+        bookId: bookId,
+        spelling: item.spelling,
+        phonetic: item.phonetic || '',
+        meaning: item.meaning || '',
+        proficiency: 0,
+        repetition: 0,
+        interval: 0,
+        easeFactor: 2.5,
+        lastReviewTime: 0,
+        nextReviewTime: 0
       };
-      this.recognitionListener(mockPayload);
-      return mockPayload.words.length;
+      wordsToAdd.push(w);
+      if (!item.hasMeaning) untranslated.push(item.spelling);
     }
-    return 0;
-  }
 
-  async confirmImport(targetBook: string, candidates: CapsuleWordCandidate[]): Promise<{ added: number; untranslated: string[] }> {
-    LuminaLog.i(`confirmImport: targetBook=${targetBook}, count=${candidates.length}`);
-    const untranslated = candidates.filter(item => !item.meaning).map(item => item.spelling);
-    const added = candidates.length;
+    let added: number = 0;
+    if (wordsToAdd.length > 0) {
+      added = await DatabaseManager.getInstance().batchInsertWords(bookId, wordsToAdd);
+    }
     return { added, untranslated };
   }
 
-  // 你要的“点球后执行的逻辑”——后面把截屏/OCR/跳转放这里
-  private onClick(): void {
-    // TODO: 1) 自动截屏 2) 本地OCR 3) startAbility 跳转导入页
+  private async pickOneImageUri(): Promise<string | null> {
+    if (!this.context) return null;
+
+    // PhotoViewPicker：用户选择图片（常见场景不需要全量图库读权限）:contentReference[oaicite:5]{index=5}
+    const opt = new photoAccessHelper.PhotoSelectOptions();
+    opt.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+    opt.maxSelectNumber = 1;
+
+    const picker = new photoAccessHelper.PhotoViewPicker();
+    const res = await picker.select(opt);
+
+    if (!res || !res.photoUris || res.photoUris.length <= 0) {
+      hilog.warn(DOMAIN, TAG, 'No image selected');
+      return null;
+    }
+    const uri: string = String(res.photoUris[0]);
+    hilog.info(DOMAIN, TAG, 'picked uri=%{public}s', uri);
+    return uri;
+  }
+
+  private async decodePixelMapFromUri(uri: string): Promise<{ pixelMap: image.PixelMap; fd: number }> {
+    // 这里采用“打开 fd -> ImageSource -> PixelMap”的通用做法（你的截图来自 picker）
+    const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+    const fd: number = file.fd;
+
+    const imageSource = image.createImageSource(fd);
+    const pixelMap = await imageSource.createPixelMap();
+    await imageSource.release();
+
+    return { pixelMap, fd };
+  }
+
+  private async parseWords(fullText: string): Promise<CapsuleRecognitionResult> {
+    const raw = fullText.split(/[^a-zA-Z]/).filter((w: string) => w.length > 2);
+    const unique: string[] = Array.from(new Set(raw.map((w: string) => w.trim().toLowerCase())));
+
+    const words: CapsuleWordCandidate[] = [];
+    const untranslated: string[] = [];
+    const suggestedBook: string = await DatabaseManager.getInstance().findAnyValidBook();
+
+    for (const spelling of unique) {
+      const normalized: string = spelling.trim();
+      if (!normalized) continue;
+
+      const existing = await DatabaseManager.getInstance().findWordGlobal(normalized);
+
+      let meaning: string = '';
+      let phonetic: string = '';
+      let hasMeaning: boolean = false;
+
+      if (existing && existing.meaning) {
+        meaning = existing.meaning;
+        phonetic = existing.phonetic || '';
+        hasMeaning = true;
+      } else {
+        meaning = await this.tryLocalTranslate(normalized);
+        hasMeaning = meaning.trim().length > 0;
+      }
+
+      if (!hasMeaning) untranslated.push(normalized);
+
+      const c = new CapsuleWordCandidate();
+      c.spelling = normalized;
+      c.meaning = meaning;
+      c.phonetic = phonetic;
+      c.hasMeaning = hasMeaning;
+      words.push(c);
+    }
+
+    const res = new CapsuleRecognitionResult();
+    res.words = words;
+    res.untranslated = untranslated;
+    res.suggestedBook = suggestedBook;
+    return res;
+  }
+
+  private async tryLocalTranslate(spelling: string): Promise<string> {
+    try {
+      const translator = this.getLocalTranslator();
+      if (translator) {
+        const result = await translator.translate({ text: spelling, sourceLang: 'en', targetLang: 'zh' });
+        if (result && result.text) return String(result.text);
+      }
+    } catch (err) {
+      hilog.info(DOMAIN, TAG, 'Local translation unavailable');
+    }
+    return '';
+  }
+
+  private getLocalTranslator(): LocalTranslator | null {
+    const g = globalThis as GlobalTranslatorHost;
+    if (g.systemPlugin && g.systemPlugin.translation) return g.systemPlugin.translation;
+    if (g.translator) return g.translator;
+    return null;
   }
 }
-
-export { FloatingCapsuleManager as FloatingBallManager };
