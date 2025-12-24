@@ -100,7 +100,13 @@ export class LuminaFloatingBallManager {
     // 标记：进入页面后自动拉起选择截图
     CapsuleFlow.markAutoPickPending();
 
+    const bundleName = this.ctx.abilityInfo?.bundleName ?? '';
+    const moduleName = this.ctx.abilityInfo?.moduleName ?? 'entry';
+
     const want: Want = {
+      deviceId: '',
+      bundleName: bundleName,
+      moduleName: moduleName,
       abilityName: 'EntryAbility',
       parameters: {
         // 这个参数将在 EntryAbility 中被捕获
