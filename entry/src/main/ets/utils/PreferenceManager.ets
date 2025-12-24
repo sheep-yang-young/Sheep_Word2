@@ -1,6 +1,6 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
-import { promptAction } from '@kit/ArkUI';
+import promptAction from '@ohos.promptAction'; // 修正导入，兼容性更好
 
 const PREF_NAME = 'LuminaPrefs';
 const KEY_DAILY_LIMIT = 'daily_limit';
@@ -16,6 +16,12 @@ const KEY_BOOK_CATEGORY_REGISTRY = 'book_category_registry';
 
 // 定义编程相关的关键词
 const CODE_KEYWORDS = ['code', 'program', 'java', 'python', 'cpp', 'c++', 'algorithm', '编程', '代码', '算法'];
+
+// [Fix] 将接口改为类，满足 ArkTS 对象字面量限制
+class CodeModeResult {
+  isCodeMode: boolean = false;
+  changed: boolean = false;
+}
 
 export class PreferenceManager {
   private static instance: PreferenceManager;
@@ -73,8 +79,8 @@ export class PreferenceManager {
     await this.pref.put(KEY_CURRENT_BOOK, name);
     await this.pref.flush();
     // 自动检测是否开启编程模式
-    const { isCodeMode } = await this.checkAndSetCodeMode(name);
-    return isCodeMode;
+    const result = await this.checkAndSetCodeMode(name);
+    return result.isCodeMode;
   }
 
   async getTimeAttackState<T>(): Promise<T | null> {
@@ -132,7 +138,7 @@ export class PreferenceManager {
   }
 
   // [新增] 自动检测逻辑
-  private async checkAndSetCodeMode(bookName: string): Promise<{ isCodeMode: boolean, changed: boolean }> {
+  private async checkAndSetCodeMode(bookName: string): Promise<CodeModeResult> {
     const storedCategory = await this.getBookCategory(bookName);
     const lowerName = bookName.toLowerCase();
     const isCodeRelated = storedCategory
@@ -144,16 +150,27 @@ export class PreferenceManager {
       await this.setProgrammingMode(true);
       promptAction.showToast({ message: '已切换至编程模式' });
       console.info(`[AutoMode] Enable Code Mode for: ${bookName}`);
-      return { isCodeMode: true, changed: true };
+
+      const res = new CodeModeResult();
+      res.isCodeMode = true;
+      res.changed = true;
+      return res;
     }
 
     if (!isCodeRelated && currentMode) {
       await this.setProgrammingMode(false);
       promptAction.showToast({ message: '已切换至通用模式' });
       console.info(`[AutoMode] Disable Code Mode for: ${bookName}`);
-      return { isCodeMode: false, changed: true };
+
+      const res = new CodeModeResult();
+      res.isCodeMode = false;
+      res.changed = true;
+      return res;
     }
 
-    return { isCodeMode: currentMode, changed: false };
+    const res = new CodeModeResult();
+    res.isCodeMode = currentMode;
+    res.changed = false;
+    return res;
   }
 }

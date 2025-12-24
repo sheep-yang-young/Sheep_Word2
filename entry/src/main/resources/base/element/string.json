@@ -11,6 +11,14 @@
     {
       "name": "EntryAbility_label",
       "value": "Lumina Word"
+    },
+    {
+      "name": "use_float_ball_reason",
+      "value": "用于在系统层显示闪控球入口，便于快速唤起应用功能，来实现用户自定义导入词库"
+    },
+    {
+      "name": "capture_screen_reason",
+      "value": "用于截取用户屏幕信息以进行OCR传入用户的自定义词库内"
     }
   ]
 }

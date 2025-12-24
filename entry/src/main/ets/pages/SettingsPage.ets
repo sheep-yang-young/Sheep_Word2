@@ -77,7 +77,7 @@ export struct SettingsPage {
                   .fontSize(18)
                   .fontWeight(FontWeight.Bold)
                   .margin({ left: 12, right: 12 })
-                  .minWidth(24)
+                  .constraintSize({ minWidth: 120 })
                   .textAlign(TextAlign.Center)
 
                 SymbolGlyph($r('sys.symbol.plus_circle'))

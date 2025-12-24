@@ -66,17 +66,20 @@
       {
         "name": "ohos.permission.VIBRATE"
       },
-      // 允许应用创建系统悬浮窗
       {
-        "name": "ohos.permission.SYSTEM_FLOAT_WINDOW",
+        "name": "ohos.permission.USE_FLOAT_BALL",
+        "reason": "$string:use_float_ball_reason",
         "usedScene": {
           "abilities": [
             "EntryAbility"
           ],
           "when": "inuse"
-        }
-      }
-    ],
+        },
+      },
+      {"name": "ohos.permission.CAPTURE_SCREEN",
+        "reason": "$string:capture_screen_reason",
+        "usedScene": { "abilities": ["EntryAbility"], "when": "inuse" }},
+      ],
     "metadata": [
       {
         "name": "network_security_config",
