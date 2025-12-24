@@ -1,6 +1,6 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
-import { promptAction } from '@kit/ArkUI';
+import { promptAction } from '@kit.ArkUI';
 
 const PREF_NAME = 'LuminaPrefs';
 const KEY_DAILY_LIMIT = 'daily_limit';
@@ -73,8 +73,8 @@ export class PreferenceManager {
     await this.pref.put(KEY_CURRENT_BOOK, name);
     await this.pref.flush();
     // 自动检测是否开启编程模式
-    const { isCodeMode } = await this.checkAndSetCodeMode(name);
-    return isCodeMode;
+    const result = await this.checkAndSetCodeMode(name);
+    return result.isCodeMode;
   }
 
   async getTimeAttackState<T>(): Promise<T | null> {
@@ -132,7 +132,7 @@ export class PreferenceManager {
   }
 
   // [新增] 自动检测逻辑
-  private async checkAndSetCodeMode(bookName: string): Promise<{ isCodeMode: boolean, changed: boolean }> {
+  private async checkAndSetCodeMode(bookName: string): Promise<CodeModeResult> {
     const storedCategory = await this.getBookCategory(bookName);
     const lowerName = bookName.toLowerCase();
     const isCodeRelated = storedCategory
@@ -144,16 +144,21 @@ export class PreferenceManager {
       await this.setProgrammingMode(true);
       promptAction.showToast({ message: '已切换至编程模式' });
       console.info(`[AutoMode] Enable Code Mode for: ${bookName}`);
-      return { isCodeMode: true, changed: true };
+      return { isCodeMode: true, changed: true } as CodeModeResult;
     }
 
     if (!isCodeRelated && currentMode) {
       await this.setProgrammingMode(false);
       promptAction.showToast({ message: '已切换至通用模式' });
       console.info(`[AutoMode] Disable Code Mode for: ${bookName}`);
-      return { isCodeMode: false, changed: true };
+      return { isCodeMode: false, changed: true } as CodeModeResult;
     }
 
-    return { isCodeMode: currentMode, changed: false };
+    return { isCodeMode: currentMode, changed: false } as CodeModeResult;
   }
+}
+
+interface CodeModeResult {
+  isCodeMode: boolean;
+  changed: boolean;
 }
