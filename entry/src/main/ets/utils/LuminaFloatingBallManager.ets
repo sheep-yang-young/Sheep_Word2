@@ -1,5 +1,6 @@
 import hilog from '@ohos.hilog';
 import { common, Want } from '@kit.AbilityKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import floatingBall from '@ohos.window.floatingBall';
 import { CapsuleFlow } from './CapsuleFlow';
 
@@ -21,30 +22,41 @@ export class LuminaFloatingBallManager {
     this.ctx = context;
   }
 
+  /**
+   * 启动悬浮球
+   */
   async start(): Promise<void> {
     if (!this.ctx) {
       hilog.warn(DOMAIN, TAG, 'Floating ball start skipped: context not initialized');
       return;
     }
-    if (this.started) return;
+    if (this.started) {
+      hilog.info(DOMAIN, TAG, 'Already started');
+      return;
+    }
 
     try {
-      const supported: boolean = await floatingBall.isFloatingBallSupported();
-      hilog.info(DOMAIN, TAG, 'isFloatingBallSupported=%{public}s', String(supported));
-      if (!supported) return;
+      hilog.info(DOMAIN, TAG, 'Attempting to create floating ball...');
 
-      // 先创建控制器（文档写法：floatingBall.create() 获取 controller）:contentReference[oaicite:2]{index=2}
-      this.controller = floatingBall.create();
+      // [修复] 参数必须包裹在对象中
+      this.controller = await floatingBall.create({ context: this.ctx });
 
-      // 监听点击（社区/示例常见 click + stateChange；官方 d.ts 至少有 stateChange）:contentReference[oaicite:3]{index=3}
+      if (!this.controller) {
+        hilog.error(DOMAIN, TAG, 'Controller creation failed (null)');
+        return;
+      }
+
+      // 设置点击监听
       this.controller.on('click', () => {
         this.onBallClick();
       });
+
+      // 设置状态监听
       this.controller.on('stateChange', (st: floatingBall.FloatingBallState) => {
         hilog.info(DOMAIN, TAG, 'stateChange=%{public}s', JSON.stringify(st));
       });
 
-      // 关键：NORMAL 模板需要 title，否则 Template is invalid. :contentReference[oaicite:4]{index=4}
+      // 设置属性
       const params: floatingBall.FloatingBallParams = {
         template: floatingBall.FloatingBallTemplate.NORMAL,
         title: 'Lumina',
@@ -55,20 +67,28 @@ export class LuminaFloatingBallManager {
       this.started = true;
       hilog.info(DOMAIN, TAG, 'startFloatingBall OK');
     } catch (err) {
-      hilog.error(DOMAIN, TAG, 'startFloatingBall FAILED: %{public}s', JSON.stringify(err));
+      const error = err as BusinessError;
+      hilog.error(DOMAIN, TAG, 'startFloatingBall FAILED: %{public}s', JSON.stringify(error));
     }
   }
 
+  /**
+   * 停止悬浮球
+   */
   async stop(): Promise<void> {
     try {
       if (this.controller) {
         await this.controller.stopFloatingBall();
         this.controller.off('click');
         this.controller.off('stateChange');
+        // 销毁引用
         this.controller = null;
       }
+      this.started = false;
+      hilog.info(DOMAIN, TAG, 'stopFloatingBall OK');
     } catch (err) {
-      hilog.warn(DOMAIN, TAG, 'stopFloatingBall err=%{public}s', JSON.stringify(err));
+      const error = err as BusinessError;
+      hilog.warn(DOMAIN, TAG, 'stopFloatingBall err=%{public}s', JSON.stringify(error));
     } finally {
       this.started = false;
     }
@@ -77,18 +97,19 @@ export class LuminaFloatingBallManager {
   private onBallClick(): void {
     if (!this.ctx) return;
 
-    // 标记：进入 CapsuleImportPage 后自动拉起选择截图
+    // 标记：进入页面后自动拉起选择截图
     CapsuleFlow.markAutoPickPending();
 
     const want: Want = {
       abilityName: 'EntryAbility',
       parameters: {
+        // 这个参数将在 EntryAbility 中被捕获
         openCapsuleImport: true
       }
     };
 
     hilog.info(DOMAIN, TAG, 'ball click -> startAbility to CapsuleImportPage');
-    this.ctx.startAbility(want).catch((err) => {
+    this.ctx.startAbility(want).catch((err: BusinessError) => {
       hilog.error(DOMAIN, TAG, 'startAbility failed=%{public}s', JSON.stringify(err));
     });
   }

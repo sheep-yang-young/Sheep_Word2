@@ -4,6 +4,7 @@ import { textRecognition } from '@kit.CoreVisionKit';
 import { image } from '@kit.ImageKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { fileIo } from '@kit.CoreFileKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { DatabaseManager } from './DatabaseManager';
 import { Word } from '../model/WordModel';
 
@@ -40,9 +41,20 @@ interface LocalTranslator {
   translate(options: TranslateOptions): Promise<TranslateResult>;
 }
 
+// [修复 Error 5] 提取接口，避免嵌套字面量类型
+interface TranslateSystemPlugin {
+  translation?: LocalTranslator;
+}
+
 interface GlobalTranslatorHost {
-  systemPlugin?: { translation?: LocalTranslator };
+  systemPlugin?: TranslateSystemPlugin;
   translator?: LocalTranslator;
+}
+
+// [修复 Error 6] 提取接口
+interface DecodeResult {
+  pixelMap: image.PixelMap;
+  fd: number;
 }
 
 export class FloatingCapsuleManager {
@@ -87,7 +99,7 @@ export class FloatingCapsuleManager {
       const uri: string | null = await this.pickOneImageUri();
       if (!uri) return 0;
 
-      const decode = await this.decodePixelMapFromUri(uri);
+      const decode: DecodeResult = await this.decodePixelMapFromUri(uri);
       pixelMap = decode.pixelMap;
       fd = decode.fd;
 
@@ -104,7 +116,8 @@ export class FloatingCapsuleManager {
 
       return parsed.words.length;
     } catch (err) {
-      hilog.error(DOMAIN, TAG, 'Import failed=%{public}s', JSON.stringify(err));
+      const error = err as BusinessError;
+      hilog.error(DOMAIN, TAG, 'Import failed=%{public}s', JSON.stringify(error));
       return 0;
     } finally {
       if (pixelMap) {
@@ -150,7 +163,6 @@ export class FloatingCapsuleManager {
   private async pickOneImageUri(): Promise<string | null> {
     if (!this.context) return null;
 
-    // PhotoViewPicker：用户选择图片（常见场景不需要全量图库读权限）:contentReference[oaicite:5]{index=5}
     const opt = new photoAccessHelper.PhotoSelectOptions();
     opt.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
     opt.maxSelectNumber = 1;
@@ -167,8 +179,8 @@ export class FloatingCapsuleManager {
     return uri;
   }
 
-  private async decodePixelMapFromUri(uri: string): Promise<{ pixelMap: image.PixelMap; fd: number }> {
-    // 这里采用“打开 fd -> ImageSource -> PixelMap”的通用做法（你的截图来自 picker）
+  // [修复 Error 6] 使用接口作为返回类型
+  private async decodePixelMapFromUri(uri: string): Promise<DecodeResult> {
     const file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
     const fd: number = file.fd;
 
@@ -176,6 +188,7 @@ export class FloatingCapsuleManager {
     const pixelMap = await imageSource.createPixelMap();
     await imageSource.release();
 
+    // [修复 Error 7] 返回符合接口的对象
     return { pixelMap, fd };
   }
 

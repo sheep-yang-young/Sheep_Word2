@@ -1,8 +1,8 @@
 import { router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
-import { promptAction } from '@kit.ArkUI'; // 引入提示框
+import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
-import { FloatingCapsuleManager } from '../utils/FloatingCapsuleManager';
+import { LuminaFloatingBallManager } from '../utils/LuminaFloatingBallManager';
 
 @Component
 export struct SettingsPage {
@@ -10,21 +10,25 @@ export struct SettingsPage {
   @State hapticEnabled: boolean = true;
   @State currentBook: string = "Default Library";
 
+  // [新增] 悬浮球开关状态
+  @State isFloatingBallOn: boolean = false;
+
   async aboutToAppear() {
     const pm = PreferenceManager.getInstance();
-    // this.dailyLimit = await pm.getDailyLimit(); // [删除] 依赖 @Link
     this.hapticEnabled = await pm.isHapticEnabled();
     this.currentBook = await pm.getCurrentBook();
+    // [新增] 读取悬浮球状态
+    this.isFloatingBallOn = await pm.isFloatingBallEnabled();
   }
 
   build() {
     Column() {
-      // [新增] 手动模拟 DragHandle (消除白条问题的关键)
+      // 模拟 DragHandle
       Row() {
         Row()
           .width(40)
           .height(4)
-          .backgroundColor('#D1D1D6') // iOS/鸿蒙风格的灰色条
+          .backgroundColor('#D1D1D6')
           .borderRadius(2)
       }
       .width('100%')
@@ -97,7 +101,7 @@ export struct SettingsPage {
           .borderRadius(16)
         }
 
-        // --- 第二组：辅助工具 ---
+        // --- 第二组：辅助工具 (修改为 Switch 模式) ---
         ListItem() {
           Column() {
             Row() {
@@ -114,23 +118,34 @@ export struct SettingsPage {
                     .padding({ left: 4, right: 4, top: 2, bottom: 2 })
                     .borderRadius(4)
                 }
-                Text('在桌面显示悬浮球，支持截图导入查词')
+                Text('开启后常驻桌面，点击即可截图查词')
                   .fontSize(12)
                   .fontColor('#999')
               }
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
 
-              Button('开启')
-                .fontSize(14)
-                .height(30)
-                .backgroundColor('#0A59F7')
-                .onClick(async () => {
-                  try {
-                    const context = getContext(this) as common.UIAbilityContext;
-                    await FloatingCapsuleManager.getInstance().showCapsule(context);
-                  } catch (e) {
-                    promptAction.showToast({ message: '开启失败，请检查悬浮窗权限' });
+              // [修改] 使用 Toggle 替代 Button
+              Toggle({ type: ToggleType.Switch, isOn: this.isFloatingBallOn })
+                .selectedColor('#0A59F7')
+                .onChange(async (isOn: boolean) => {
+                  this.isFloatingBallOn = isOn;
+                  await PreferenceManager.getInstance().setFloatingBallEnabled(isOn);
+
+                  const context = getContext(this) as common.UIAbilityContext;
+                  // 确保 context 已初始化
+                  LuminaFloatingBallManager.getInstance().init(context);
+
+                  if (isOn) {
+                    try {
+                      await LuminaFloatingBallManager.getInstance().start();
+                      promptAction.showToast({ message: '悬浮球已开启' });
+                    } catch (e) {
+                      this.isFloatingBallOn = false; // 开启失败回滚状态
+                      promptAction.showToast({ message: '开启失败，请检查悬浮窗权限' });
+                    }
+                  } else {
+                    await LuminaFloatingBallManager.getInstance().stop();
                   }
                 })
             }
@@ -198,12 +213,11 @@ export struct SettingsPage {
           .backgroundColor('#FFFFFF')
           .borderRadius(16)
           .onClick(() => {
-            // 路由跳转
             router.pushUrl({ url: 'pages/AboutPage' });
           })
         }
 
-        // 底部垫高，防止被圆角遮挡
+        // 底部垫高
         ListItem().height(40)
 
       }
@@ -214,6 +228,6 @@ export struct SettingsPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F7FA') // 确保背景色统一
+    .backgroundColor('#F5F7FA')
   }
 }

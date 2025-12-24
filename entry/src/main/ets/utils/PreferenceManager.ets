@@ -1,6 +1,6 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
-import promptAction from '@ohos.promptAction'; // 修正导入，兼容性更好
+import promptAction from '@ohos.promptAction';
 
 const PREF_NAME = 'LuminaPrefs';
 const KEY_DAILY_LIMIT = 'daily_limit';
@@ -13,11 +13,10 @@ const KEY_FIRST_LAUNCH = 'first_launch_v2';
 const KEY_TIME_ATTACK_STATE = 'time_attack_state';
 const KEY_CODE_MODE = 'is_code_mode';
 const KEY_BOOK_CATEGORY_REGISTRY = 'book_category_registry';
+const KEY_FLOATING_BALL = 'floating_ball_enabled';
 
-// 定义编程相关的关键词
 const CODE_KEYWORDS = ['code', 'program', 'java', 'python', 'cpp', 'c++', 'algorithm', '编程', '代码', '算法'];
 
-// [Fix] 将接口改为类，满足 ArkTS 对象字面量限制
 class CodeModeResult {
   isCodeMode: boolean = false;
   changed: boolean = false;
@@ -36,15 +35,17 @@ export class PreferenceManager {
     return PreferenceManager.instance;
   }
 
+  // [修复] 参数改为 common.Context，这样 UIAbility 和 FormExtension 都能用
   async init(context: common.Context): Promise<void> {
     if (this.pref) return;
     try {
       this.pref = await preferences.getPreferences(context, PREF_NAME);
     } catch (e) {
-      console.error('[Lumina] Pref init failed', e);
+      console.error('[Lumina] Pref init failed', JSON.stringify(e));
     }
   }
 
+  // === 基础配置 ===
   async isFirstLaunch(): Promise<boolean> {
     if (!this.pref) return true;
     return (await this.pref.get(KEY_FIRST_LAUNCH, true)) as boolean;
@@ -71,45 +72,27 @@ export class PreferenceManager {
   async getTtsSpeed(): Promise<number> { if (!this.pref) return 1.0; return (await this.pref.get(KEY_TTS_SPEED, 1.0)) as number; }
   async setTtsSpeed(speed: number): Promise<void> { if (!this.pref) return; await this.pref.put(KEY_TTS_SPEED, speed); await this.pref.flush(); }
 
+  // === 悬浮球配置 ===
+  async isFloatingBallEnabled(): Promise<boolean> {
+    if (!this.pref) return false;
+    return await this.pref.get(KEY_FLOATING_BALL, false) as boolean;
+  }
+
+  async setFloatingBallEnabled(enabled: boolean): Promise<void> {
+    if (!this.pref) return;
+    await this.pref.put(KEY_FLOATING_BALL, enabled);
+    await this.pref.flush();
+  }
+
+  // === 词书管理 ===
   async getCurrentBook(): Promise<string> { if (!this.pref) return "Default Library"; return (await this.pref.get(KEY_CURRENT_BOOK, "Default Library")) as string; }
 
-  // [修改] 设置当前词书，并触发自动模式检测
   async setCurrentBook(name: string): Promise<boolean> {
     if (!this.pref) return false;
     await this.pref.put(KEY_CURRENT_BOOK, name);
     await this.pref.flush();
-    // 自动检测是否开启编程模式
     const result = await this.checkAndSetCodeMode(name);
     return result.isCodeMode;
-  }
-
-  async getTimeAttackState<T>(): Promise<T | null> {
-    if (!this.pref) return null;
-    const raw = (await this.pref.get(KEY_TIME_ATTACK_STATE, "")) as string;
-    if (!raw) return null;
-    try { return JSON.parse(raw) as T; } catch (e) { return null; }
-  }
-
-  async setTimeAttackState(value: object): Promise<void> {
-    if (!this.pref) return;
-    try {
-      await this.pref.put(KEY_TIME_ATTACK_STATE, JSON.stringify(value));
-      await this.pref.flush();
-    } catch (e) { console.error('[Lumina] Failed to persist time attack state', e); }
-  }
-
-  async clearTimeAttackState(): Promise<void> { if (!this.pref) return; await this.pref.delete(KEY_TIME_ATTACK_STATE); await this.pref.flush(); }
-
-  // [新增] 编程模式相关
-  async isProgrammingMode(): Promise<boolean> {
-    if (!this.pref) return false;
-    return await this.pref.get(KEY_CODE_MODE, false) as boolean;
-  }
-
-  async setProgrammingMode(isEnabled: boolean): Promise<void> {
-    if (!this.pref) return;
-    await this.pref.put(KEY_CODE_MODE, isEnabled);
-    await this.pref.flush();
   }
 
   async registerBookCategory(bookName: string, category: string): Promise<void> {
@@ -132,12 +115,22 @@ export class PreferenceManager {
       const raw = (await this.pref.get(KEY_BOOK_CATEGORY_REGISTRY, '{}')) as string;
       return JSON.parse(raw) as Record<string, string>;
     } catch (e) {
-      console.error('[Lumina] Failed to parse category registry', e);
       return {};
     }
   }
 
-  // [新增] 自动检测逻辑
+  // === 编程模式 ===
+  async isProgrammingMode(): Promise<boolean> {
+    if (!this.pref) return false;
+    return await this.pref.get(KEY_CODE_MODE, false) as boolean;
+  }
+
+  async setProgrammingMode(isEnabled: boolean): Promise<void> {
+    if (!this.pref) return;
+    await this.pref.put(KEY_CODE_MODE, isEnabled);
+    await this.pref.flush();
+  }
+
   private async checkAndSetCodeMode(bookName: string): Promise<CodeModeResult> {
     const storedCategory = await this.getBookCategory(bookName);
     const lowerName = bookName.toLowerCase();
@@ -148,9 +141,7 @@ export class PreferenceManager {
 
     if (isCodeRelated && !currentMode) {
       await this.setProgrammingMode(true);
-      promptAction.showToast({ message: '已切换至编程模式' });
-      console.info(`[AutoMode] Enable Code Mode for: ${bookName}`);
-
+      try { promptAction.showToast({ message: '已切换至编程模式' }); } catch(e) {}
       const res = new CodeModeResult();
       res.isCodeMode = true;
       res.changed = true;
@@ -159,9 +150,7 @@ export class PreferenceManager {
 
     if (!isCodeRelated && currentMode) {
       await this.setProgrammingMode(false);
-      promptAction.showToast({ message: '已切换至通用模式' });
-      console.info(`[AutoMode] Disable Code Mode for: ${bookName}`);
-
+      try { promptAction.showToast({ message: '已切换至通用模式' }); } catch(e) {}
       const res = new CodeModeResult();
       res.isCodeMode = false;
       res.changed = true;
@@ -172,5 +161,27 @@ export class PreferenceManager {
     res.isCodeMode = currentMode;
     res.changed = false;
     return res;
+  }
+
+  // === 60秒挑战状态 ===
+  async getTimeAttackState<T>(): Promise<T | null> {
+    if (!this.pref) return null;
+    const raw = (await this.pref.get(KEY_TIME_ATTACK_STATE, "")) as string;
+    if (!raw) return null;
+    try { return JSON.parse(raw) as T; } catch (e) { return null; }
+  }
+
+  async setTimeAttackState(value: object): Promise<void> {
+    if (!this.pref) return;
+    try {
+      await this.pref.put(KEY_TIME_ATTACK_STATE, JSON.stringify(value));
+      await this.pref.flush();
+    } catch (e) { }
+  }
+
+  async clearTimeAttackState(): Promise<void> {
+    if (!this.pref) return;
+    await this.pref.delete(KEY_TIME_ATTACK_STATE);
+    await this.pref.flush();
   }
 }

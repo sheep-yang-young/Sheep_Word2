@@ -16,10 +16,8 @@ export default class EntryAbility extends UIAbility {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
     } catch (err) {}
 
-    // 初始化闪控球管理器
     LuminaFloatingBallManager.getInstance().init(this.context);
 
-    // 如果本次启动来源于闪控球，标记自动拉起选择器
     const p = want && want.parameters ? want.parameters : undefined;
     if (p && (p['openCapsuleImport'] === true)) {
       CapsuleFlow.markAutoPickPending();
@@ -41,23 +39,26 @@ export default class EntryAbility extends UIAbility {
       } catch (err) {}
     });
 
-    // 如果是闪控球点击进入：直接加载 CapsuleImportPage；否则仍然 Index（不改变你原有默认行为）
+    // 处理闪控球自动跳转
     const auto = CapsuleFlow.consumeAutoPickPending();
     if (auto) {
-      windowStage.loadContent('pages/CapsuleImportPage');
-    } else {
-      windowStage.loadContent('pages/Index');
+      // 触发全局跳转
+      AppStorage.setOrCreate('NavigateToCapsuleImport', true);
     }
+    windowStage.loadContent('pages/Index');
 
-    // 启动闪控球（放这里：保证 context/window 都就绪）
-    LuminaFloatingBallManager.getInstance().start();
+    // 恢复悬浮球状态
+    PreferenceManager.getInstance().isFloatingBallEnabled().then(enabled => {
+      if(enabled) LuminaFloatingBallManager.getInstance().start();
+    });
   }
 
   onNewWant(want: Want): void {
     const p = want && want.parameters ? want.parameters : undefined;
-    if (p && (p['openCapsuleImport'] === true) && this.stageRef) {
+    if (p && (p['openCapsuleImport'] === true)) {
       CapsuleFlow.markAutoPickPending();
-      this.stageRef.loadContent('pages/CapsuleImportPage');
+      // 触发 UI 跳转
+      AppStorage.setOrCreate('NavigateToCapsuleImport', true);
     }
   }
 }

@@ -20,7 +20,7 @@ import { PreferenceManager } from '../utils/PreferenceManager';
 import { NewsReaderPage } from './NewsReaderPage';
 import { PodcastPage } from './PodcastPage';
 import { CustomImportPage } from './CustomImportPage';
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI'; // [修复] 补充 router 导入
 import { StorePage } from './StorePage';
 import { CloudBook, CloudBookManager } from '../utils/CloudBookManager';
 
@@ -38,18 +38,28 @@ struct Index {
   @Provide refreshFlag: number = 0;
 
   @State isShowSettingsSheet: boolean = false;
-  // [关键修复] 将 dailyLimit 提升到父组件，确保主页和设置页同步
   @State dailyLimit: number = 20;
 
   @State isFirstLaunch: boolean = false;
   @State isReady: boolean = false;
+
+  // [修复] 监听全局跳转请求 (必须定义在 struct 内部)
+  @StorageProp('NavigateToCapsuleImport') @Watch('onNavigateRequest') navigateFlag: boolean = false;
+
+  onNavigateRequest() {
+    if (this.navigateFlag) {
+      // 重置标记，防止重复跳转
+      AppStorage.setOrCreate('NavigateToCapsuleImport', false);
+      // 跳转到截图导入页
+      router.pushUrl({ url: 'pages/CapsuleImportPage' });
+    }
+  }
 
   async aboutToAppear(): Promise<void> {
     const context = getContext(this) as common.UIAbilityContext;
     await PreferenceManager.getInstance().init(context);
     await DatabaseManager.getInstance().init(context);
 
-    // 初始化时获取一次 dailyLimit
     this.dailyLimit = await PreferenceManager.getInstance().getDailyLimit();
 
     this.isFirstLaunch = await PreferenceManager.getInstance().isFirstLaunch();
@@ -106,7 +116,6 @@ struct Index {
   @Builder
   SettingsSheetBuilder() {
     Column() {
-      // 传递 @Link dailyLimit
       SettingsPage({ dailyLimit: $dailyLimit })
     }
     .width('100%')
@@ -126,7 +135,6 @@ struct Index {
           }).zIndex(999)
         } else {
           Navigation(this.pageStack) {
-            // 传递 @Link dailyLimit
             HomePage({
               isShowSettingsSheet: $isShowSettingsSheet,
               dailyLimit: $dailyLimit
@@ -143,7 +151,7 @@ struct Index {
     .bindSheet($$this.isShowSettingsSheet, this.SettingsSheetBuilder(), {
       detents: [SheetSize.MEDIUM, SheetSize.LARGE],
       backgroundColor: '#F5F7FA',
-      dragBar: false, // [关键修复] 关闭系统自带拖条，解决白条问题，我们在 SettingsPage 里自己画
+      dragBar: false,
       blurStyle: BlurStyle.Thick
     })
   }
@@ -162,7 +170,6 @@ struct HomePage {
   @Consume @Watch('onRefreshTriggered') refreshFlag: number;
 
   @Link isShowSettingsSheet: boolean;
-  // [关键修复] 接收父组件的 dailyLimit，实现自动同步
   @Link dailyLimit: number;
 
   @State currentIndex: number = 0;
@@ -252,7 +259,6 @@ struct HomePage {
 
     this.reviewMode = await pref.getReviewMode();
     this.selectedBook = await pref.getCurrentBook();
-    // this.dailyLimit = await pref.getDailyLimit(); // [删除] 不再从 pref 读，而是依赖 @Link
 
     const isValid = this.selectedBook && this.selectedBook !== "Default Library" && this.selectedBook !== "请选择词书";
     if (!isValid) {
@@ -514,15 +520,12 @@ struct HomePage {
 
       Scroll() {
         Column({ space: 20 }) {
-          // [关键修复] Lumina 互动卡片
           Stack({ alignContent: Alignment.Bottom }) {
-            // 背景卡
             Column()
               .width('100%').height(280)
               .backgroundColor(this.getTotalPending() > 0 ? '#E6F7FF' : '#F6FFED')
               .borderRadius(24).shadow({ radius: 20, color: 'rgba(0,0,0,0.05)' })
 
-            // 绵羊图像
             Column() {
               if (this.getTotalPending() > 0) {
                 Text(`还有 ${this.getTotalPending()} 个词没背...`).fontSize(12).fontColor('#fff').backgroundColor('#FF4D4F').padding(8).borderRadius(12).margin({ bottom: 10 })
@@ -533,13 +536,11 @@ struct HomePage {
                 .height(160)
                 .objectFit(ImageFit.Contain)
                 .scale({ x: this.sheepScale, y: this.sheepScale })
-                // [关键修复] 增加点击区域和层级
                 .onClick(() => this.interactWithSheep())
             }
             .padding({ bottom: 40 })
-            .zIndex(2) // [关键修复] 提升层级，防止被下方的 Row 遮挡点击
+            .zIndex(2)
 
-            // 统计数据 (位于底部)
             Row() {
               Text(`Mastered: ${this.stats.mastered}`).fontSize(12).fontColor('#666').fontWeight(FontWeight.Bold)
               Blank()
@@ -547,7 +548,7 @@ struct HomePage {
             }
             .width('100%')
             .padding(20)
-            .hitTestBehavior(HitTestMode.Transparent) // [关键修复] 让点击穿透这个 Row，防止遮挡小羊脚部
+            .hitTestBehavior(HitTestMode.Transparent)
           }
           .height(300).width('100%').padding({ left: 20, right: 20 })
 
@@ -629,7 +630,6 @@ struct HomePage {
   }
 }
 
-// === ArchiveView 和 WoolWarehouseDialog 保持原样 ===
 @Component
 struct ArchiveView {
   @Link stats: DashboardStats;
