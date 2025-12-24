@@ -1,5 +1,6 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { promptAction } from '@kit/ArkUI';
 
 const PREF_NAME = 'LuminaPrefs';
 const KEY_DAILY_LIMIT = 'daily_limit';
@@ -11,6 +12,7 @@ const KEY_CURRENT_BOOK = 'current_book';
 const KEY_FIRST_LAUNCH = 'first_launch_v2';
 const KEY_TIME_ATTACK_STATE = 'time_attack_state';
 const KEY_CODE_MODE = 'is_code_mode';
+const KEY_BOOK_CATEGORY_REGISTRY = 'book_category_registry';
 
 // 定义编程相关的关键词
 const CODE_KEYWORDS = ['code', 'program', 'java', 'python', 'cpp', 'c++', 'algorithm', '编程', '代码', '算法'];
@@ -66,12 +68,13 @@ export class PreferenceManager {
   async getCurrentBook(): Promise<string> { if (!this.pref) return "Default Library"; return (await this.pref.get(KEY_CURRENT_BOOK, "Default Library")) as string; }
 
   // [修改] 设置当前词书，并触发自动模式检测
-  async setCurrentBook(name: string): Promise<void> {
-    if (!this.pref) return;
+  async setCurrentBook(name: string): Promise<boolean> {
+    if (!this.pref) return false;
     await this.pref.put(KEY_CURRENT_BOOK, name);
     await this.pref.flush();
     // 自动检测是否开启编程模式
-    await this.checkAndSetCodeMode(name);
+    const { isCodeMode } = await this.checkAndSetCodeMode(name);
+    return isCodeMode;
   }
 
   async getTimeAttackState<T>(): Promise<T | null> {
@@ -103,18 +106,54 @@ export class PreferenceManager {
     await this.pref.flush();
   }
 
+  async registerBookCategory(bookName: string, category: string): Promise<void> {
+    if (!this.pref) return;
+    const registry = await this.getCategoryRegistry();
+    registry[bookName] = category;
+    await this.pref.put(KEY_BOOK_CATEGORY_REGISTRY, JSON.stringify(registry));
+    await this.pref.flush();
+  }
+
+  async getBookCategory(bookName: string): Promise<string | null> {
+    if (!this.pref) return null;
+    const registry = await this.getCategoryRegistry();
+    return registry[bookName] ?? null;
+  }
+
+  private async getCategoryRegistry(): Promise<Record<string, string>> {
+    if (!this.pref) return {};
+    try {
+      const raw = (await this.pref.get(KEY_BOOK_CATEGORY_REGISTRY, '{}')) as string;
+      return JSON.parse(raw) as Record<string, string>;
+    } catch (e) {
+      console.error('[Lumina] Failed to parse category registry', e);
+      return {};
+    }
+  }
+
   // [新增] 自动检测逻辑
-  private async checkAndSetCodeMode(bookName: string): Promise<void> {
+  private async checkAndSetCodeMode(bookName: string): Promise<{ isCodeMode: boolean, changed: boolean }> {
+    const storedCategory = await this.getBookCategory(bookName);
     const lowerName = bookName.toLowerCase();
-    const isCodeRelated = CODE_KEYWORDS.some(keyword => lowerName.includes(keyword));
+    const isCodeRelated = storedCategory
+      ? storedCategory.toLowerCase() === 'code'
+      : CODE_KEYWORDS.some(keyword => lowerName.includes(keyword));
     const currentMode = await this.isProgrammingMode();
 
     if (isCodeRelated && !currentMode) {
       await this.setProgrammingMode(true);
+      promptAction.showToast({ message: '已切换至编程模式' });
       console.info(`[AutoMode] Enable Code Mode for: ${bookName}`);
-    } else if (!isCodeRelated && currentMode) {
-      await this.setProgrammingMode(false);
-      console.info(`[AutoMode] Disable Code Mode for: ${bookName}`);
+      return { isCodeMode: true, changed: true };
     }
+
+    if (!isCodeRelated && currentMode) {
+      await this.setProgrammingMode(false);
+      promptAction.showToast({ message: '已切换至通用模式' });
+      console.info(`[AutoMode] Disable Code Mode for: ${bookName}`);
+      return { isCodeMode: false, changed: true };
+    }
+
+    return { isCodeMode: currentMode, changed: false };
   }
 }

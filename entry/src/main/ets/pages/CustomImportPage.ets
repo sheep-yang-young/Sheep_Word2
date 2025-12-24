@@ -1,6 +1,7 @@
 import { DatabaseManager } from '../utils/DatabaseManager';
 import { Word } from '../model/WordModel';
 import { promptAction } from '@kit.ArkUI';
+import { PreferenceManager } from '../utils/PreferenceManager';
 
 @Component
 export struct CustomImportPage {
@@ -56,7 +57,11 @@ export struct CustomImportPage {
     }
 
     this.isProcessing = false;
-    promptAction.showToast({ message: `成功导入 ${successCount} 个单词到 "${bookName}"` });
+    const pref = PreferenceManager.getInstance();
+    await pref.registerBookCategory(bookName, 'English');
+    await pref.setCurrentBook(bookName);
+
+    promptAction.showToast({ message: `成功导入 ${successCount} 个单词到 "${bookName}" 并已切换。` });
     this.pageStack.pop();
   }
 
