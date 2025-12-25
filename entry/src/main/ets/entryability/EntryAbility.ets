@@ -1,4 +1,4 @@
-import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, ConfigurationConstant, UIAbility, Want, common } from '@kit.AbilityKit';
 import hilog from '@ohos.hilog';
 import { window } from '@kit.ArkUI';
 import { DatabaseManager } from '../utils/DatabaseManager';
@@ -70,8 +70,16 @@ export default class EntryAbility extends UIAbility {
     windowStage.loadContent('pages/Index');
 
     // 恢复悬浮球状态
-    PreferenceManager.getInstance().isFloatingBallEnabled().then(enabled => {
-      if(enabled) LuminaFloatingBallManager.getInstance().start();
+    PreferenceManager.getInstance().init(this.context);
+    LuminaFloatingBallManager.getInstance().init(this.context as common.UIAbilityContext);
+    PreferenceManager.getInstance().isFloatingBallEnabled().then(async (enabled) => {
+      if (enabled) {
+        try {
+          await LuminaFloatingBallManager.getInstance().start();
+        } catch (err) {
+          hilog.warn(this.domain, this.tag, 'Auto start floating ball failed %{public}s', JSON.stringify(err));
+        }
+      }
     });
   }
 

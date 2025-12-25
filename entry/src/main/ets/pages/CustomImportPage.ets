@@ -2,6 +2,7 @@ import { DatabaseManager } from '../utils/DatabaseManager';
 import { Word } from '../model/WordModel';
 import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
+import { common } from '@kit.AbilityKit';
 
 @Component
 export struct CustomImportPage {
@@ -29,7 +30,11 @@ export struct CustomImportPage {
     // 去重
     const uniqueWords = Array.from(new Set(rawWords.map(w => w.toLowerCase())));
     const db = DatabaseManager.getInstance();
+    const ctx = getContext(this) as common.UIAbilityContext;
+    await db.init(ctx);
+    await PreferenceManager.getInstance().init(ctx);
     let successCount = 0;
+    let failedCount = 0;
 
     // 存入名为 "自定义导入" 的词书
     const bookName = "User Imports";
@@ -52,16 +57,23 @@ export struct CustomImportPage {
       // 由于没有直接的 insert API，我们复用 checkBookExists 的逻辑思路
       // 注意：你需要确保 DatabaseManager 提供了插入单个单词的方法，这里假设有
       // 如果没有，可以调用 addWord(word) (需在DatabaseManager中实现)
-      await db.addWord(word);
-      successCount++;
+      const inserted = await db.addWord(word);
+      if (inserted > 0) {
+        successCount++;
+      } else {
+        failedCount++;
+      }
     }
 
     this.isProcessing = false;
     const pref = PreferenceManager.getInstance();
-    await pref.registerBookCategory(bookName, 'English');
+    await pref.registerBookCategory(bookName, 'User');
     await pref.setCurrentBook(bookName);
 
-    promptAction.showToast({ message: `成功导入 ${successCount} 个单词到 "${bookName}" 并已切换。` });
+    const message = failedCount > 0
+      ? `成功导入 ${successCount} 个单词，${failedCount} 个已存在或保存失败。`
+      : `成功导入 ${successCount} 个单词到 "${bookName}" 并已切换。`;
+    promptAction.showToast({ message });
     this.pageStack.pop();
   }
 
