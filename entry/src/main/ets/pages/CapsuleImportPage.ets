@@ -73,7 +73,13 @@ struct CapsuleImportPage {
     }
 
     this.loading = true;
-    const r = await FloatingCapsuleManager.getInstance().confirmImport(this.bookId, pick);
+    const normalizedBookId = this.bookId.trim();
+    if (!normalizedBookId) {
+      this.loading = false;
+      promptAction.showToast({ message: '请先输入词库名称' });
+      return;
+    }
+    const r = await FloatingCapsuleManager.getInstance().confirmImport(normalizedBookId, pick);
     this.loading = false;
 
     promptAction.showToast({ message: `已添加 ${r.added} 个单词` });
@@ -106,7 +112,7 @@ struct CapsuleImportPage {
 
         Row({ space: 8 }) {
           Text('保存到词库ID:').fontSize(14);
-          TextInput({ text: this.bookId, placeholder: '例如 CET4 / Captured_Words' })
+          TextInput({ text: this.bookId, placeholder: '例如 CET4 / 自定义词书' })
             .onChange((v: string) => { this.bookId = v; })
             .layoutWeight(1);
         }.width('100%');

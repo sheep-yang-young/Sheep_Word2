@@ -40,7 +40,7 @@ export class CustomBookService {
     return `${this.ctx.filesDir}/${fileName}`;
   }
 
-  async appendWord(word: Word): Promise<AppendResult> {
+  async appendWord(word: Word, opts?: { setAsCurrent?: boolean }): Promise<AppendResult> {
     if (!this.ctx) {
       hilog.error(DOMAIN, TAG, 'appendWord aborted: context missing');
       return 'error';
@@ -81,7 +81,9 @@ export class CustomBookService {
       const inserted = await DatabaseManager.getInstance().addWord(normalizedWord);
       if (inserted > 0) {
         await PreferenceManager.getInstance().registerBookCategory(CUSTOM_BOOK_ID, 'User');
-        await PreferenceManager.getInstance().setCurrentBook(CUSTOM_BOOK_ID);
+        if (opts?.setAsCurrent) {
+          await PreferenceManager.getInstance().setCurrentBook(CUSTOM_BOOK_ID);
+        }
         return 'success';
       }
 

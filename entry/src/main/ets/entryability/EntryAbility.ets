@@ -70,17 +70,23 @@ export default class EntryAbility extends UIAbility {
     windowStage.loadContent('pages/Index');
 
     // 恢复悬浮球状态
-    PreferenceManager.getInstance().init(this.context);
-    LuminaFloatingBallManager.getInstance().init(this.context as common.UIAbilityContext);
-    PreferenceManager.getInstance().isFloatingBallEnabled().then(async (enabled) => {
-      if (enabled) {
-        try {
-          await LuminaFloatingBallManager.getInstance().start();
-        } catch (err) {
-          hilog.warn(this.domain, this.tag, 'Auto start floating ball failed %{public}s', JSON.stringify(err));
+    (async () => {
+      try {
+        await PreferenceManager.getInstance().init(this.context);
+        LuminaFloatingBallManager.getInstance().init(this.context as common.UIAbilityContext);
+        const enabled = await PreferenceManager.getInstance().isFloatingBallEnabled();
+        LuminaLog.i(`EntryAbility.onWindowStageCreate floating ball enabled=${enabled}`);
+        if (enabled) {
+          try {
+            await LuminaFloatingBallManager.getInstance().start();
+          } catch (err) {
+            hilog.warn(this.domain, this.tag, 'Auto start floating ball failed %{public}s', JSON.stringify(err));
+          }
         }
+      } catch (err) {
+        hilog.warn(this.domain, this.tag, 'Restore floating ball failed %{public}s', JSON.stringify(err));
       }
-    });
+    })();
   }
 
   onNewWant(want: Want): void {
