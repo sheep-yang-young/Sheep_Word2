@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI';
+import { router, NavPathStack } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
@@ -7,6 +7,8 @@ import { LuminaFloatingBallManager } from '../utils/LuminaFloatingBallManager';
 @Component
 export struct SettingsPage {
   @Link dailyLimit: number;
+  @Link isShowSettingsSheet: boolean;
+  @Consume('pageStack') pageStack: NavPathStack;
   @State hapticEnabled: boolean = true;
   @State currentBook: string = "Default Library";
 
@@ -218,7 +220,9 @@ export struct SettingsPage {
           .backgroundColor('#FFFFFF')
           .borderRadius(16)
           .onClick(() => {
-            router.pushUrl({ url: 'pages/AboutPage' });
+            // 先收起设置页，再通过导航栈跳转到关于页
+            this.isShowSettingsSheet = false;
+            this.pageStack.pushPath({ name: 'AboutPage' });
           })
         }
 
