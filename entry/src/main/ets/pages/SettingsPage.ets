@@ -218,7 +218,7 @@ export struct SettingsPage {
           .backgroundColor('#FFFFFF')
           .borderRadius(16)
           .onClick(() => {
-            router.pushUrl({ url: './AboutPage' });
+            router.pushUrl({ url: 'pages/AboutPage' });
           })
         }
 
