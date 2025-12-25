@@ -4,10 +4,12 @@ import { util } from '@kit.ArkTS'; // 新增引用，用于 TextEncoder
 import hilog from '@ohos.hilog';
 import { PreferenceManager } from './PreferenceManager';
 import { Word } from '../model/WordModel';
+import { DatabaseManager } from './DatabaseManager';
 
 const DOMAIN: number = 0xA0A03D;
 const TAG: string = 'CustomBookService';
 const DEFAULT_FILE_NAME = 'Lumina_Custom_Book.json';
+export const CUSTOM_BOOK_ID = 'Custom_Book';
 
 type AppendResult = 'success' | 'duplicate' | 'error';
 
@@ -45,21 +47,41 @@ export class CustomBookService {
     }
 
     try {
+      await PreferenceManager.getInstance().init(this.ctx);
+      await DatabaseManager.getInstance().init(this.ctx);
+
+      const normalizedWord = this.serializeWord({ ...word, bookId: CUSTOM_BOOK_ID });
+      const spellingKey = (normalizedWord.spelling || '').trim().toLowerCase();
+      if (!spellingKey) {
+        hilog.warn(DOMAIN, TAG, 'appendWord aborted: spelling missing');
+        return 'error';
+      }
+
+      const existsInDb = await DatabaseManager.getInstance().checkWordExists(CUSTOM_BOOK_ID, normalizedWord.spelling || '');
+
       const path = await this.prepareFile();
       const content = fileIo.readTextSync(path);
-      // ArkTS JSON.parse 返回 Object，建议显式转换或使用 interface 定义结构
       const parsed: object = JSON.parse(content) as object;
       const list: Word[] = Array.isArray(parsed) ? parsed as Word[] : [];
 
-      const exists = list.some(item => (item?.spelling || '').trim().toLowerCase() === (word.spelling || '').trim().toLowerCase());
-      if (exists) {
+      const existsInFile = list.some(item => (item?.spelling || '').trim().toLowerCase() === spellingKey);
+      if (existsInDb || existsInFile) {
         return 'duplicate';
       }
 
-      const serialized = this.serializeWord(word);
-      list.push(serialized);
+      const updatedList = [...list, normalizedWord];
+      this.writeUtf8Text(path, JSON.stringify(updatedList, null, 2));
+
+      const inserted = await DatabaseManager.getInstance().addWord(normalizedWord);
+      if (inserted > 0) {
+        await PreferenceManager.getInstance().registerBookCategory(CUSTOM_BOOK_ID, 'User');
+        await PreferenceManager.getInstance().setCurrentBook(CUSTOM_BOOK_ID);
+        return 'success';
+      }
+
+      // 回滚文件写入，确保 JSON 备份与数据库一致
       this.writeUtf8Text(path, JSON.stringify(list, null, 2));
-      return 'success';
+      return 'error';
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'appendWord failed %{public}s', JSON.stringify(e));
       return 'error';
