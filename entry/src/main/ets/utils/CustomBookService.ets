@@ -1,6 +1,7 @@
 import { fileIo } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import hilog from '@ohos.hilog';
+import util from '@ohos.util';
 import { PreferenceManager } from './PreferenceManager';
 import { Word } from '../model/WordModel';
 
@@ -135,7 +136,7 @@ export class CustomBookService {
   private writeUtf8Text(path: string, content: string): void {
     const file = fileIo.openSync(path, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
-      const encoded = new TextEncoder().encode(content);
+      const encoded = new util.TextEncoder().encode(content);
       fileIo.writeSync(file.fd, encoded);
     } finally {
       fileIo.closeSync(file.fd);
