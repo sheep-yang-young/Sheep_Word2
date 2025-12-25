@@ -76,9 +76,6 @@
           "when": "inuse"
         }
       },
-      {
-        "name": "ohos.permission.CAPTURE_SCREEN"
-      }
     ],
     "metadata": [
       {
