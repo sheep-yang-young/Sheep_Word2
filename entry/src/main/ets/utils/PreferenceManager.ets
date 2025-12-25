@@ -15,6 +15,7 @@ const KEY_CODE_MODE = 'is_code_mode';
 const KEY_BOOK_CATEGORY_REGISTRY = 'book_category_registry';
 const KEY_FLOATING_BALL = 'floating_ball_enabled';
 const KEY_CAPTURED_SCREENSHOTS = 'captured_screenshots';
+const KEY_CUSTOM_BOOK_FILE = 'custom_book_file_name';
 
 const CODE_KEYWORDS = ['code', 'program', 'java', 'python', 'cpp', 'c++', 'algorithm', '编程', '代码', '算法'];
 
@@ -86,6 +87,20 @@ export class PreferenceManager {
   async setFloatingBallEnabled(enabled: boolean): Promise<void> {
     if (!this.pref) return;
     await this.pref.put(KEY_FLOATING_BALL, enabled);
+    await this.pref.flush();
+  }
+
+  // === 自定义词书配置 ===
+  async getCustomBookFileName(): Promise<string> {
+    if (!this.pref) return 'Lumina_Custom_Book.json';
+    const stored = await this.pref.get(KEY_CUSTOM_BOOK_FILE, 'Lumina_Custom_Book.json') as string;
+    return this.normalizeFileName(stored);
+  }
+
+  async setCustomBookFileName(name: string): Promise<void> {
+    if (!this.pref) return;
+    const safeName = this.normalizeFileName(name);
+    await this.pref.put(KEY_CUSTOM_BOOK_FILE, safeName);
     await this.pref.flush();
   }
 
@@ -217,5 +232,11 @@ export class PreferenceManager {
     if (!this.pref) return;
     await this.pref.delete(KEY_TIME_ATTACK_STATE);
     await this.pref.flush();
+  }
+
+  private normalizeFileName(name: string | null | undefined): string {
+    if (!name || name.trim().length === 0) return 'Lumina_Custom_Book.json';
+    const sanitized = name.replace(/[\\\/]/g, '').trim();
+    return sanitized.length > 0 ? sanitized : 'Lumina_Custom_Book.json';
   }
 }

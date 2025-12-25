@@ -3,10 +3,10 @@ import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import floatingBall from '@ohos.window.floatingBall';
 import { CurrentWordService } from './CurrentWordService';
-import { DatabaseManager } from './DatabaseManager';
 import { PreferenceManager } from './PreferenceManager';
 import { promptAction } from '@kit.ArkUI';
 import { Word } from '../model/WordModel';
+import { CustomBookService } from './CustomBookService';
 
 const DOMAIN: number = 0xA0A03D;
 const TAG: string = 'LuminaBall';
@@ -110,7 +110,7 @@ export class LuminaFloatingBallManager {
 
     if (!CurrentWordService.getInstance().isInReviewSession()) {
       hilog.warn(DOMAIN, TAG, 'onBallClick aborted: not in review session');
-      try { promptAction.showToast({ message: '你没有在背单词' }); } catch (e) {}
+      try { promptAction.showToast({ message: '请在学习或复习页面使用悬浮球收藏单词' }); } catch (e) {}
       return;
     }
 
@@ -124,13 +124,17 @@ export class LuminaFloatingBallManager {
     const targetBook = await PreferenceManager.getInstance().getCurrentBook();
     const normalizedWord = await this.buildPersistableWord(currentWord, targetBook);
     try {
-      const insertedId = await DatabaseManager.getInstance().addWord(normalizedWord);
-      if (insertedId > 0) {
-        hilog.info(DOMAIN, TAG, 'Word added via floating ball: %{public}s', normalizedWord.spelling);
-        try { promptAction.showToast({ message: `已添加：${normalizedWord.spelling}` }); } catch (e) {}
+      CustomBookService.getInstance().init(this.ctx);
+      const result = await CustomBookService.getInstance().appendWord(normalizedWord);
+      if (result === 'success') {
+        hilog.info(DOMAIN, TAG, 'Word saved to custom book: %{public}s', normalizedWord.spelling);
+        try { promptAction.showToast({ message: `已保存到自定义词书：${normalizedWord.spelling}` }); } catch (e) {}
+      } else if (result === 'duplicate') {
+        hilog.info(DOMAIN, TAG, 'Word already exists in custom book: %{public}s', normalizedWord.spelling);
+        try { promptAction.showToast({ message: '自定义词书已包含该单词' }); } catch (e) {}
       } else {
-        hilog.info(DOMAIN, TAG, 'Word already exists or failed to insert: %{public}s', normalizedWord.spelling);
-        try { promptAction.showToast({ message: '当前词书已包含该单词' }); } catch (e) {}
+        hilog.warn(DOMAIN, TAG, 'Custom book save failed for %{public}s', normalizedWord.spelling);
+        try { promptAction.showToast({ message: '保存到自定义词书时出错' }); } catch (e) {}
       }
     } catch (err) {
       hilog.error(DOMAIN, TAG, 'onBallClick insert failed %{public}s', JSON.stringify(err));
