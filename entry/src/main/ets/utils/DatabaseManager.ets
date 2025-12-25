@@ -228,6 +228,22 @@ export class DatabaseManager {
     }
   }
 
+  async checkWordExists(bookId: string, spelling: string): Promise<boolean> {
+    const s = this.rdbStore;
+    if (!s) return false;
+    try {
+      const r = await s.querySql(
+        'SELECT 1 FROM words WHERE book_id = ? AND LOWER(spelling) = LOWER(?) LIMIT 1',
+        [bookId, spelling]
+      );
+      const exists = r.goToFirstRow();
+      r.close();
+      return exists;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // --- 随机取词 ---
   async getRandomWords(bookId: string, limit: number = 20): Promise<Word[]> {
     const s = this.rdbStore;
