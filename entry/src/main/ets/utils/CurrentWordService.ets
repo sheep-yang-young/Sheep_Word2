@@ -5,6 +5,41 @@ const DOMAIN: number = 0xA0A03D;
 const TAG: string = 'CurrentWordService';
 
 /**
+ * Concrete snapshot implementation to satisfy ArkTS requirements that object
+ * literals map to a declared class or interface without relying on restricted
+ * standard library helpers.
+ */
+class WordSnapshot implements Word {
+  id?: number;
+  bookId: string = '';
+  spelling: string = '';
+  phonetic?: string;
+  meaning: string = '';
+  example?: string;
+  note?: string;
+  roots?: string[];
+  affixes?: string[];
+  collocations?: string[];
+  synonyms?: string[];
+  antonyms?: string[];
+  derivatives?: string[];
+  senses?: string[];
+  knowledgeScore?: number;
+  proficiency: number = 0;
+  repetition: number = 0;
+  interval: number = 0;
+  easeFactor: number = 0;
+  lastReviewTime: number = 0;
+  nextReviewTime: number = 0;
+  proficiencySpelling?: number;
+  repetitionSpelling?: number;
+  intervalSpelling?: number;
+  easeFactorSpelling?: number;
+  lastReviewTimeSpelling?: number;
+  nextReviewTimeSpelling?: number;
+}
+
+/**
  * Lightweight shared store for the word currently being studied in the UI.
  *
  * The data is mirrored into AppStorage so non-component code (e.g., floating ball manager)
@@ -13,9 +48,23 @@ const TAG: string = 'CurrentWordService';
 export class CurrentWordService {
   private static inst: CurrentWordService = new CurrentWordService();
   private currentWord: Word | null = null;
+  private inReviewSession: boolean = false;
 
   static getInstance(): CurrentWordService {
     return CurrentWordService.inst;
+  }
+
+  startReviewSession(): void {
+    this.inReviewSession = true;
+  }
+
+  endReviewSession(): void {
+    this.inReviewSession = false;
+    this.setCurrentWord(null);
+  }
+
+  isInReviewSession(): boolean {
+    return this.inReviewSession;
   }
 
   setCurrentWord(word: Word | null): void {

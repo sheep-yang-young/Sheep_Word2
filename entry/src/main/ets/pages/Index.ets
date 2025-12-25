@@ -566,13 +566,6 @@ struct HomePage {
             this.QuickActionCard('每日新闻', 'China Daily', '#FA8C16', $r('sys.symbol.doc_text'), () => { this.pageStack.pushPath({ name: 'DailyNewsPage' }) })
           }.padding({ left: 20, right: 20 })
 
-          Row({ space: 12 }) {
-            this.QuickActionCard('截图识词', '查看自动截图', '#13C2C2', $r('sys.symbol.camera'), () => {
-              this.pageStack.pushPath({ name: 'ScreenshotGalleryPage' });
-            })
-            Blank().layoutWeight(1)
-          }.padding({ left: 20, right: 20 })
-
           Column() {
             Text('近期活跃').fontSize(16).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 10 })
             Grid() {

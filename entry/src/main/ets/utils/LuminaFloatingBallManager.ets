@@ -108,6 +108,12 @@ export class LuminaFloatingBallManager {
       return;
     }
 
+    if (!CurrentWordService.getInstance().isInReviewSession()) {
+      hilog.warn(DOMAIN, TAG, 'onBallClick aborted: not in review session');
+      try { promptAction.showToast({ message: '你没有在背单词' }); } catch (e) {}
+      return;
+    }
+
     const currentWord = CurrentWordService.getInstance().getCurrentWord();
     if (!currentWord || !currentWord.spelling) {
       hilog.warn(DOMAIN, TAG, 'onBallClick aborted: no current word');
@@ -115,7 +121,8 @@ export class LuminaFloatingBallManager {
       return;
     }
 
-    const normalizedWord = await this.buildPersistableWord(currentWord);
+    const targetBook = await PreferenceManager.getInstance().getCurrentBook();
+    const normalizedWord = await this.buildPersistableWord(currentWord, targetBook);
     try {
       const insertedId = await DatabaseManager.getInstance().addWord(normalizedWord);
       if (insertedId > 0) {
@@ -123,7 +130,7 @@ export class LuminaFloatingBallManager {
         try { promptAction.showToast({ message: `已添加：${normalizedWord.spelling}` }); } catch (e) {}
       } else {
         hilog.info(DOMAIN, TAG, 'Word already exists or failed to insert: %{public}s', normalizedWord.spelling);
-        try { promptAction.showToast({ message: '单词已存在或添加失败' }); } catch (e) {}
+        try { promptAction.showToast({ message: '当前词书已包含该单词' }); } catch (e) {}
       }
     } catch (err) {
       hilog.error(DOMAIN, TAG, 'onBallClick insert failed %{public}s', JSON.stringify(err));
@@ -131,8 +138,12 @@ export class LuminaFloatingBallManager {
     }
   }
 
-  private async buildPersistableWord(word: Word): Promise<Word> {
-    let bookId = word.bookId;
+  private async buildPersistableWord(word: Word, targetBook: string): Promise<Word> {
+    let bookId = targetBook;
+    if (!bookId || bookId.trim().length === 0) {
+      bookId = word.bookId;
+    }
+
     if (!bookId || bookId.trim().length === 0) {
       try {
         bookId = await PreferenceManager.getInstance().getCurrentBook();
