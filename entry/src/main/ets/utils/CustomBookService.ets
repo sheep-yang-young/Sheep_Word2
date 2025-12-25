@@ -1,6 +1,6 @@
 import { fileIo } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
-import { util } from '@kit.ArkTS'; // 新增引用，用于 TextEncoder
+import { util } from '@kit.ArkTS';
 import hilog from '@ohos.hilog';
 import { PreferenceManager } from './PreferenceManager';
 import { Word } from '../model/WordModel';
@@ -50,7 +50,13 @@ export class CustomBookService {
       await PreferenceManager.getInstance().init(this.ctx);
       await DatabaseManager.getInstance().init(this.ctx);
 
-      const normalizedWord = this.serializeWord({ ...word, bookId: CUSTOM_BOOK_ID });
+      // --- 修复开始：解决 ArkTS 不支持对象 Spread 操作的问题 ---
+      // 1. 先使用 serializeWord 生成一个干净的对象副本 (Deep Copy 属性)
+      const normalizedWord = this.serializeWord(word);
+      // 2. 手动覆盖 bookId
+      normalizedWord.bookId = CUSTOM_BOOK_ID;
+      // --- 修复结束 ---
+
       const spellingKey = (normalizedWord.spelling || '').trim().toLowerCase();
       if (!spellingKey) {
         hilog.warn(DOMAIN, TAG, 'appendWord aborted: spelling missing');
@@ -124,6 +130,7 @@ export class CustomBookService {
   }
 
   private serializeWord(word: Word): Word {
+    // 这是一个显式的对象字面量构建，符合 ArkTS 规范
     const serialized: Word = {
       id: word.id,
       bookId: word.bookId,
@@ -159,11 +166,12 @@ export class CustomBookService {
   private writeUtf8Text(path: string, content: string): void {
     const file = fileIo.openSync(path, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
-      // 使用 util 模块的 TextEncoder
       const textEncoder = new util.TextEncoder();
-      // encodeInto 返回 Uint8Array
-      const encoded = textEncoder.encodeInto(content);
-      // fileIo.writeSync 需要 ArrayBuffer，显式转换
+      // 修正：使用 encode 而不是 encodeInto。
+      // encode 返回 Uint8Array，它包含 buffer 属性。
+      // encodeInto 需要传入目标 buffer，且返回结果是对象 {read, written}，没有 buffer 属性，会导致 crash。
+      const encoded = textEncoder.encode(content);
+
       fileIo.writeSync(file.fd, encoded.buffer as ArrayBuffer);
     } finally {
       fileIo.closeSync(file.fd);
