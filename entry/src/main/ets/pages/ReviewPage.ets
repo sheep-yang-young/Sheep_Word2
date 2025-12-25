@@ -50,6 +50,8 @@ export struct ReviewPage {
   });
 
   async aboutToAppear(): Promise<void> {
+    CurrentWordService.getInstance().startReviewSession();
+
     const prefs = PreferenceManager.getInstance();
     const limit = await prefs.getDailyLimit();
     this.isHapticOn = await prefs.isHapticEnabled();
@@ -74,6 +76,7 @@ export struct ReviewPage {
   aboutToDisappear(): void {
     // 移除 TTS 停止逻辑
     this.refreshFlag++;
+    CurrentWordService.getInstance().endReviewSession();
   }
 
   // 移除 playWord 方法
