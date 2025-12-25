@@ -340,8 +340,19 @@ struct HomePage {
   async handleBookClick(book: CloudBook) {
     if (this.selectedBook === book.name) return;
 
-    const context = getContext(this) as common.UIAbilityContext;
     const db = DatabaseManager.getInstance();
+    const isLocalBook = book.size === '本地' || book.category === 'User';
+
+    if (isLocalBook) {
+      const wordCount = await db.getBookWordCount(book.name);
+      if (wordCount === 0) {
+        promptAction.showToast({ message: '该本地词书暂无内容，切换后请先导入词条' });
+      }
+      await this.switchBookLogic(book);
+      return;
+    }
+
+    const context = getContext(this) as common.UIAbilityContext;
 
     const exists = await db.checkBookExists(book.name);
 
