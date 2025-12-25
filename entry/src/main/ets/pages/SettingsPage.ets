@@ -118,7 +118,7 @@ export struct SettingsPage {
                     .padding({ left: 4, right: 4, top: 2, bottom: 2 })
                     .borderRadius(4)
                 }
-                Text('开启后常驻桌面，点击会自动截图并保存到“截图盒”')
+                Text('开启在背单词的时候点击可以将当前单词添加到自己的词库里，方便后期加强背诵！')
                   .fontSize(12)
                   .fontColor('#999')
               }
@@ -152,9 +152,9 @@ export struct SettingsPage {
             .width('100%')
             .padding(16)
 
-            Text('截图会自动进入“截图盒”，可在主页快速打开并执行 OCR 导入')
+            Text('此功能仅api20以上可以开启')
               .fontSize(12)
-              .fontColor('#999')
+              .fontColor('#ffff0000')
               .padding({ left: 16, right: 16, bottom: 12 })
           }
           .backgroundColor('#FFFFFF')
@@ -218,7 +218,7 @@ export struct SettingsPage {
           .backgroundColor('#FFFFFF')
           .borderRadius(16)
           .onClick(() => {
-            router.pushUrl({ url: 'pages/AboutPage' });
+            router.pushUrl({ url: './AboutPage' });
           })
         }
 
