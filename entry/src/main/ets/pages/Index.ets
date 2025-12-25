@@ -567,7 +567,7 @@ struct HomePage {
           }.padding({ left: 20, right: 20 })
 
           Row({ space: 12 }) {
-            this.QuickActionCard('截图识词', '查看自动截图', '#13C2C2', $r('sys.symbol.camera_viewfinder'), () => {
+            this.QuickActionCard('截图识词', '查看自动截图', '#13C2C2', $r('sys.symbol.camera'), () => {
               this.pageStack.pushPath({ name: 'ScreenshotGalleryPage' });
             })
             Blank().layoutWeight(1)

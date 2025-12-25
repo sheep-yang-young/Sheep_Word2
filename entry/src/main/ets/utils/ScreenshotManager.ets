@@ -1,5 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
+import { image } from '@kit.ImageKit';
 import hilog from '@ohos.hilog';
 import screenshot from '@ohos.screenshot';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -37,25 +38,32 @@ export class ScreenshotManager {
       await this.ensureDir(dir);
       const targetPath = `${dir}/shot_${Date.now()}.png`;
 
-      // 调用系统截图能力
-      const shot: any = screenshot as any;
-      const options: any = {
-        imageType: shot?.ImageType?.PNG ?? 0,
-        quality: 100,
-        filePath: targetPath
+      // [修复] 显式指定类型 screenshot.CaptureOption
+      // ArkTS 严格模式要求对象字面量必须匹配接口类型
+      const captureOptions: screenshot.CaptureOption = {
+        // 如果需要截全屏，这里可以留空，或者根据需要配置
+        // screenRect: { left: 0, top: 0, width: 0, height: 0 },
+        // imageSize: { width: 0, height: 0 },
+        // rotation: 0
       };
 
-      let savedPath: string | null = null;
-      if (shot?.save) {
-        const res: any = await shot.save(options);
-        savedPath = res?.uri ?? res?.filePath ?? res?.path ?? targetPath;
-      } else if (shot?.capture) {
-        const res: any = await shot.capture(options);
-        savedPath = res?.uri ?? res?.filePath ?? res?.path ?? targetPath;
-      }
+      // 调用系统截图
+      const pixelMap = await screenshot.capture(captureOptions);
 
-      if (!savedPath) savedPath = targetPath;
+      // 使用 ImagePacker 保存图片
+      const packer = image.createImagePacker();
+      const packOptions: image.PackingOption = { format: 'image/png', quality: 100 };
+      const data = await packer.packing(pixelMap, packOptions);
 
+      const file = fileIo.openSync(targetPath, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE);
+      fileIo.writeSync(file.fd, data);
+      fileIo.closeSync(file.fd);
+
+      // 释放资源
+      pixelMap.release();
+      packer.release();
+
+      const savedPath = targetPath;
       const record = { path: savedPath, createdAt: Date.now() } as SavedScreenshotInfo;
       await PreferenceManager.getInstance().addCapturedScreenshot(record);
       hilog.info(DOMAIN, TAG, 'screenshot saved at %{public}s', savedPath);
@@ -69,7 +77,7 @@ export class ScreenshotManager {
 
   async getAll(): Promise<SavedScreenshotInfo[]> {
     if (this.ctx) await PreferenceManager.getInstance().init(this.ctx);
-    return await PreferenceManager.getInstance().getCapturedScreenshots();
+    return await PreferenceManager.getInstance().getCapturedScreenshots<SavedScreenshotInfo>();
   }
 
   async remove(path: string): Promise<void> {

@@ -1,6 +1,6 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
-import promptAction from '@ohos.promptAction';
+import { promptAction } from '@kit.ArkUI'; // 建议使用 Kit 导入
 
 const PREF_NAME = 'LuminaPrefs';
 const KEY_DAILY_LIMIT = 'daily_limit';
@@ -23,6 +23,11 @@ class CodeModeResult {
   changed: boolean = false;
 }
 
+// [修复] 定义接口以替代对象字面量类型
+interface ScreenshotFilterItem {
+  path: string;
+}
+
 export class PreferenceManager {
   private static instance: PreferenceManager;
   private pref: preferences.Preferences | null = null;
@@ -36,7 +41,6 @@ export class PreferenceManager {
     return PreferenceManager.instance;
   }
 
-  // [修复] 参数改为 common.Context，这样 UIAbility 和 FormExtension 都能用
   async init(context: common.Context): Promise<void> {
     if (this.pref) return;
     try {
@@ -107,7 +111,8 @@ export class PreferenceManager {
 
   async removeCapturedScreenshot(path: string): Promise<void> {
     if (!this.pref) return;
-    const list = await this.getCapturedScreenshots<{ path: string }>();
+    // [修复] 使用接口 ScreenshotFilterItem 替代对象字面量
+    const list = await this.getCapturedScreenshots<ScreenshotFilterItem>();
     const filtered = list.filter((it) => it.path !== path);
     await this.pref.put(KEY_CAPTURED_SCREENSHOTS, JSON.stringify(filtered));
     await this.pref.flush();

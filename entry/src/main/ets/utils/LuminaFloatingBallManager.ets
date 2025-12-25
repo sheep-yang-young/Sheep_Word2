@@ -1,7 +1,6 @@
 import hilog from '@ohos.hilog';
 import { common, Want } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import missionManager from '@ohos.app.ability.missionManager';
 import floatingBall from '@ohos.window.floatingBall';
 import { CapsuleFlow } from './CapsuleFlow';
 import { ScreenshotManager } from './ScreenshotManager';
@@ -40,9 +39,7 @@ export class LuminaFloatingBallManager {
 
     try {
       hilog.info(DOMAIN, TAG, 'Attempting to create floating ball...');
-      this.logContext();
 
-      // [修复] 参数必须包裹在对象中
       this.controller = await floatingBall.create({ context: this.ctx });
 
       if (!this.controller) {
@@ -157,51 +154,12 @@ export class LuminaFloatingBallManager {
 
     hilog.info(DOMAIN, TAG, 'ball click -> startAbility with want=%{public}s', JSON.stringify(want));
 
-    const resumed = await this.moveMissionToFrontIfExists(bundleName, abilityName);
-    if (resumed) {
-      hilog.info(DOMAIN, TAG, 'mission moved to front, skip starting new ability');
-      return;
-    }
-
+    // [修复] 移除 missionManager 逻辑，直接使用 startAbility。
+    // 如果 Ability 配置为 singleton（默认推荐），系统会自动将其切换到前台。
     this.ctx.startAbility(want).then(() => {
       hilog.info(DOMAIN, TAG, 'startAbility success');
     }).catch((err: BusinessError) => {
       hilog.error(DOMAIN, TAG, 'startAbility failed code=%{public}d detail=%{public}s', err.code, JSON.stringify(err));
     });
-  }
-
-  private async moveMissionToFrontIfExists(bundleName: string, abilityName: string): Promise<boolean> {
-    if (!bundleName || !abilityName) {
-      hilog.warn(DOMAIN, TAG, 'moveMissionToFrontIfExists skipped: bundleName or abilityName missing');
-      return false;
-    }
-
-    try {
-      const missions: missionManager.MissionInfo[] = await missionManager.getMissionInfos(bundleName, 20);
-      const target = missions.find((info: missionManager.MissionInfo) =>
-        info.want?.bundleName === bundleName && info.want?.abilityName === abilityName);
-
-      if (!target) {
-        hilog.info(DOMAIN, TAG, 'No existing mission found for %{public}s/%{public}s', bundleName, abilityName);
-        return false;
-      }
-
-      await missionManager.moveMissionToFront(target.missionId);
-      hilog.info(DOMAIN, TAG, 'Moved mission %{public}d to front', target.missionId);
-      return true;
-    } catch (err) {
-      const error = err as BusinessError;
-      hilog.warn(DOMAIN, TAG, 'moveMissionToFrontIfExists failed: %{public}s', JSON.stringify(error));
-      return false;
-    }
-  }
-
-  private logContext(): void {
-    if (!this.ctx) {
-      hilog.warn(DOMAIN, TAG, 'logContext skipped: ctx missing');
-      return;
-    }
-
-    hilog.info(DOMAIN, TAG, 'context ability=%{public}s', JSON.stringify(this.ctx.abilityInfo));
   }
 }
