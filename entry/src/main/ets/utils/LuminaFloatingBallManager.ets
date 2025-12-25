@@ -142,7 +142,6 @@ export class LuminaFloatingBallManager {
     }
 
     const normalized: Word = {
-      ...word,
       bookId: bookId || 'Default Library',
       spelling: word.spelling || '',
       meaning: word.meaning || '',
@@ -170,6 +169,10 @@ export class LuminaFloatingBallManager {
       lastReviewTimeSpelling: word.lastReviewTimeSpelling ?? 0,
       nextReviewTimeSpelling: word.nextReviewTimeSpelling ?? 0
     };
+
+    if (word.id !== undefined) {
+      normalized.id = word.id;
+    }
     return normalized;
   }
 }
