@@ -463,7 +463,7 @@ struct HomePage {
                   } else if (book.category === 'English') {
                     SymbolGlyph($r('sys.symbol.a_square_fill')).fontSize(28).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
                   } else if (book.category === 'User' || book.size === '本地') {
-                    SymbolGlyph($r('sys.symbol.tray_full')).fontSize(24).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
+                    SymbolGlyph($r('sys.symbol.tram_fill')).fontSize(24).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
                   } else {
                     Text('</>').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.selectedBook === book.name ? '#0A59F7' : '#888')
                   }
