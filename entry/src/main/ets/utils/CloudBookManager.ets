@@ -5,7 +5,7 @@ import { common } from '@kit.AbilityKit';
 export interface CloudBook {
   id: string;
   name: string;
-  category: 'English' | 'Code';
+  category: 'English' | 'Code' | 'User' | string;
   size: string;
   desc: string;
   version: number;
