@@ -20,8 +20,7 @@ export class CurrentWordService {
 
   setCurrentWord(word: Word | null): void {
     if (word) {
-      // Shallow copy to avoid external mutations from breaking our cache
-      const cloned: Word = Object.assign({}, word);
+      const cloned: Word = this.cloneWord(word);
       this.currentWord = cloned;
       AppStorage.setOrCreate('CurrentStudyWord', cloned);
       hilog.debug(DOMAIN, TAG, 'Set current word to %{public}s', word.spelling);
@@ -43,5 +42,45 @@ export class CurrentWordService {
     }
     hilog.debug(DOMAIN, TAG, 'No current word available');
     return null;
+  }
+
+  /**
+   * ArkTS limits standard library usage and dynamic object composition. Build
+   * a shallow clone manually so the returned literal exactly matches the Word
+   * interface while avoiding Object.assign/spread.
+   */
+  private cloneWord(source: Word): Word {
+    const cloned: Word = {
+      bookId: source.bookId,
+      spelling: source.spelling,
+      meaning: source.meaning,
+      proficiency: source.proficiency,
+      repetition: source.repetition,
+      interval: source.interval,
+      easeFactor: source.easeFactor,
+      lastReviewTime: source.lastReviewTime,
+      nextReviewTime: source.nextReviewTime
+    };
+
+    if (source.id !== undefined) { cloned.id = source.id; }
+    if (source.phonetic !== undefined) { cloned.phonetic = source.phonetic; }
+    if (source.example !== undefined) { cloned.example = source.example; }
+    if (source.note !== undefined) { cloned.note = source.note; }
+    if (source.roots !== undefined) { cloned.roots = source.roots; }
+    if (source.affixes !== undefined) { cloned.affixes = source.affixes; }
+    if (source.collocations !== undefined) { cloned.collocations = source.collocations; }
+    if (source.synonyms !== undefined) { cloned.synonyms = source.synonyms; }
+    if (source.antonyms !== undefined) { cloned.antonyms = source.antonyms; }
+    if (source.derivatives !== undefined) { cloned.derivatives = source.derivatives; }
+    if (source.senses !== undefined) { cloned.senses = source.senses; }
+    if (source.knowledgeScore !== undefined) { cloned.knowledgeScore = source.knowledgeScore; }
+    if (source.proficiencySpelling !== undefined) { cloned.proficiencySpelling = source.proficiencySpelling; }
+    if (source.repetitionSpelling !== undefined) { cloned.repetitionSpelling = source.repetitionSpelling; }
+    if (source.intervalSpelling !== undefined) { cloned.intervalSpelling = source.intervalSpelling; }
+    if (source.easeFactorSpelling !== undefined) { cloned.easeFactorSpelling = source.easeFactorSpelling; }
+    if (source.lastReviewTimeSpelling !== undefined) { cloned.lastReviewTimeSpelling = source.lastReviewTimeSpelling; }
+    if (source.nextReviewTimeSpelling !== undefined) { cloned.nextReviewTimeSpelling = source.nextReviewTimeSpelling; }
+
+    return cloned;
   }
 }
