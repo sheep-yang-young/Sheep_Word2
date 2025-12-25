@@ -99,16 +99,17 @@ export class CurrentWordService {
    * interface while avoiding Object.assign/spread.
    */
   private cloneWord(source: Word): Word {
-    const cloned: WordSnapshot = new WordSnapshot();
-    cloned.bookId = source.bookId;
-    cloned.spelling = source.spelling;
-    cloned.meaning = source.meaning;
-    cloned.proficiency = source.proficiency;
-    cloned.repetition = source.repetition;
-    cloned.interval = source.interval;
-    cloned.easeFactor = source.easeFactor;
-    cloned.lastReviewTime = source.lastReviewTime;
-    cloned.nextReviewTime = source.nextReviewTime;
+    const cloned: Word = {
+      bookId: source.bookId,
+      spelling: source.spelling,
+      meaning: source.meaning,
+      proficiency: source.proficiency,
+      repetition: source.repetition,
+      interval: source.interval,
+      easeFactor: source.easeFactor,
+      lastReviewTime: source.lastReviewTime,
+      nextReviewTime: source.nextReviewTime
+    };
 
     if (source.id !== undefined) { cloned.id = source.id; }
     if (source.phonetic !== undefined) { cloned.phonetic = source.phonetic; }
