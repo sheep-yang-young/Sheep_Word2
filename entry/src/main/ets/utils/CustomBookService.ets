@@ -56,7 +56,7 @@ export class CustomBookService {
 
       const serialized = this.serializeWord(word);
       list.push(serialized);
-      this.writeText(path, JSON.stringify(list, null, 2));
+      fileIo.writeTextSync(path, JSON.stringify(list, null, 2));
       return 'success';
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'appendWord failed %{public}s', JSON.stringify(e));
@@ -76,7 +76,7 @@ export class CustomBookService {
         throw new Error('Target path is not a file');
       }
     } catch (e) {
-      this.writeText(path, '[]');
+      fileIo.writeTextSync(path, '[]');
       return path;
     }
 
@@ -84,10 +84,10 @@ export class CustomBookService {
       const text = fileIo.readTextSync(path);
       const parsed: object = JSON.parse(text) as object;
       if (!Array.isArray(parsed)) {
-        this.writeText(path, '[]');
+        fileIo.writeTextSync(path, '[]');
       }
     } catch (e) {
-      this.writeText(path, '[]');
+      fileIo.writeTextSync(path, '[]');
     }
     return path;
   }
@@ -130,16 +130,5 @@ export class CustomBookService {
       nextReviewTimeSpelling: word.nextReviewTimeSpelling
     };
     return serialized;
-  }
-
-  private writeText(path: string, content: string): void {
-    const file = fileIo.openSync(path, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
-    try {
-      const encoder = new TextEncoder();
-      const buffer = encoder.encode(content).buffer;
-      fileIo.writeSync(file.fd, buffer);
-    } finally {
-      fileIo.closeSync(file);
-    }
   }
 }
