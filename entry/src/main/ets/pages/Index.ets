@@ -225,34 +225,56 @@ struct HomePage {
 
   async checkDownloadedStatus() {
     const db = DatabaseManager.getInstance();
+    const existingBooks = new Set(await db.listAllBooks());
     const newDownloadedList: string[] = [];
 
     for (const book of this.bookList) {
-      if (book.size === '内置') {
+      if (book.size === '内置' || existingBooks.has(book.name)) {
         newDownloadedList.push(book.name);
-      } else {
-        const exists = await db.checkBookExists(book.name);
-        if (exists) {
-          newDownloadedList.push(book.name);
-        }
       }
     }
-    this.downloadedBooks = newDownloadedList;
+    this.downloadedBooks = Array.from(new Set(newDownloadedList));
   }
 
   async loadBooks() {
     this.isSheetLoading = true;
-    this.bookList = [...LOCAL_BOOKS];
+    const db = DatabaseManager.getInstance();
+    const pref = PreferenceManager.getInstance();
+    const mergedList: CloudBook[] = [...LOCAL_BOOKS];
+    const seenNames = new Set<string>(LOCAL_BOOKS.map(book => book.name));
 
     try {
       const cloud = await CloudBookManager.getManifest();
       if (cloud && cloud.length > 0) {
-        this.bookList = [...LOCAL_BOOKS, ...cloud];
+        cloud.forEach(book => {
+          if (!seenNames.has(book.name)) {
+            mergedList.push(book);
+            seenNames.add(book.name);
+          }
+        });
+      }
+
+      const localBooks = await db.listAllBooks();
+      for (const name of localBooks) {
+        if (!name || name === 'Default Library') continue;
+        if (seenNames.has(name)) continue;
+
+        const category = await pref.getBookCategory(name) ?? 'User';
+        mergedList.push({
+          id: name,
+          name,
+          category,
+          size: '本地',
+          desc: '用户自定义词书',
+          version: 1
+        });
+        seenNames.add(name);
       }
     } catch (e) {
       console.error('Fetch cloud books error:', e);
       promptAction.showToast({ message: '获取云端列表失败，请检查服务器配置' });
     } finally {
+      this.bookList = mergedList;
       await this.checkDownloadedStatus();
       this.isSheetLoading = false;
     }
@@ -379,14 +401,18 @@ struct HomePage {
 
   async switchBookLogic(book: CloudBook | string) {
     const bookName = typeof book === 'string' ? book : book.name;
-    const category = typeof book === 'string' ? undefined : book.category;
+    const categoryFromBook = typeof book === 'string' ? undefined : book.category;
+    const pref = PreferenceManager.getInstance();
 
-    if (category) {
-      await PreferenceManager.getInstance().registerBookCategory(bookName, category);
+    const storedCategory = await pref.getBookCategory(bookName);
+    const bookCategory = categoryFromBook ?? storedCategory ?? 'User';
+
+    if (bookCategory) {
+      await pref.registerBookCategory(bookName, bookCategory);
     }
 
     this.selectedBook = bookName;
-    await PreferenceManager.getInstance().setCurrentBook(bookName);
+    await pref.setCurrentBook(bookName);
     await this.refreshStats();
     this.isShowBookSheet = false;
     promptAction.showToast({ message: `已切换至 ${bookName}` });
@@ -430,33 +456,37 @@ struct HomePage {
       List({ space: 12 }) {
         ForEach(this.bookList, (book: CloudBook) => {
           ListItem() {
-            Row() {
-              Column() {
-                if (book.size === '内置') {
-                  SymbolGlyph($r('sys.symbol.bookmark')).fontSize(24).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#FA8C16'])
-                } else if (book.category === 'English') {
-                  SymbolGlyph($r('sys.symbol.a_square_fill')).fontSize(28).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
-                } else {
-                  Text('</>').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.selectedBook === book.name ? '#0A59F7' : '#888')
-                }
-              }
-              .width(48).height(48).backgroundColor(this.selectedBook === book.name ? '#E6F7FF' : '#F5F5F5')
-              .borderRadius(12).justifyContent(FlexAlign.Center).margin({ right: 16 })
-
-              Column({ space: 4 }) {
-                Row({ space: 6 }) {
-                  Text(book.name).fontSize(16).fontWeight(FontWeight.Medium).fontColor('#333')
-
-                  if (this.selectedBook === book.name) {
-                    Text('当前使用').fontSize(10).fontColor('#0A59F7').backgroundColor('#E6F7FF').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
-                  } else if (book.size === '内置') {
-                    Text('内置').fontSize(10).fontColor('#FA8C16').backgroundColor('#FFF7E6').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
+              Row() {
+                Column() {
+                  if (book.size === '内置') {
+                    SymbolGlyph($r('sys.symbol.bookmark')).fontSize(24).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#FA8C16'])
+                  } else if (book.category === 'English') {
+                    SymbolGlyph($r('sys.symbol.a_square_fill')).fontSize(28).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
+                  } else if (book.category === 'User' || book.size === '本地') {
+                    SymbolGlyph($r('sys.symbol.tray_full')).fontSize(24).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
                   } else {
-                    Text('云端').fontSize(10).fontColor('#13c2c2').backgroundColor('#e6fffb').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
+                    Text('</>').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.selectedBook === book.name ? '#0A59F7' : '#888')
                   }
                 }
-                Text(`${book.desc} · ${book.size}`).fontSize(12).fontColor('#999').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-              }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+                .width(48).height(48).backgroundColor(this.selectedBook === book.name ? '#E6F7FF' : '#F5F5F5')
+                .borderRadius(12).justifyContent(FlexAlign.Center).margin({ right: 16 })
+
+                Column({ space: 4 }) {
+                  Row({ space: 6 }) {
+                    Text(book.name).fontSize(16).fontWeight(FontWeight.Medium).fontColor('#333')
+
+                    if (this.selectedBook === book.name) {
+                      Text('当前使用').fontSize(10).fontColor('#0A59F7').backgroundColor('#E6F7FF').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
+                    } else if (book.size === '内置') {
+                      Text('内置').fontSize(10).fontColor('#FA8C16').backgroundColor('#FFF7E6').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
+                    } else if (book.category === 'User' || book.size === '本地') {
+                      Text('本地').fontSize(10).fontColor('#389e0d').backgroundColor('#f6ffed').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
+                    } else {
+                      Text('云端').fontSize(10).fontColor('#13c2c2').backgroundColor('#e6fffb').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
+                    }
+                  }
+                  Text(`${book.desc} · ${book.size}`).fontSize(12).fontColor('#999').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                }.layoutWeight(1).alignItems(HorizontalAlign.Start)
 
               if (this.downloadingBookId === book.id) {
                 LoadingProgress().width(24).height(24).color('#0A59F7')
