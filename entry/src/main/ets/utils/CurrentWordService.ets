@@ -21,8 +21,9 @@ export class CurrentWordService {
   setCurrentWord(word: Word | null): void {
     if (word) {
       // Shallow copy to avoid external mutations from breaking our cache
-      this.currentWord = { ...word };
-      AppStorage.setOrCreate('CurrentStudyWord', { ...word });
+      const cloned: Word = Object.assign({}, word);
+      this.currentWord = cloned;
+      AppStorage.setOrCreate('CurrentStudyWord', cloned);
       hilog.debug(DOMAIN, TAG, 'Set current word to %{public}s', word.spelling);
     } else {
       this.currentWord = null;
