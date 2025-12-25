@@ -1,5 +1,6 @@
 import { fileIo } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
+import { util } from '@kit.ArkTS'; // 新增引用，用于 TextEncoder
 import hilog from '@ohos.hilog';
 import { PreferenceManager } from './PreferenceManager';
 import { Word } from '../model/WordModel';
@@ -46,6 +47,7 @@ export class CustomBookService {
     try {
       const path = await this.prepareFile();
       const content = fileIo.readTextSync(path);
+      // ArkTS JSON.parse 返回 Object，建议显式转换或使用 interface 定义结构
       const parsed: object = JSON.parse(content) as object;
       const list: Word[] = Array.isArray(parsed) ? parsed as Word[] : [];
 
@@ -135,8 +137,12 @@ export class CustomBookService {
   private writeUtf8Text(path: string, content: string): void {
     const file = fileIo.openSync(path, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
-      const encoded = new TextEncoder().encode(content);
-      fileIo.writeSync(file.fd, encoded);
+      // 使用 util 模块的 TextEncoder
+      const textEncoder = new util.TextEncoder();
+      // encodeInto 返回 Uint8Array
+      const encoded = textEncoder.encodeInto(content);
+      // fileIo.writeSync 需要 ArrayBuffer，显式转换
+      fileIo.writeSync(file.fd, encoded.buffer as ArrayBuffer);
     } finally {
       fileIo.closeSync(file.fd);
     }
