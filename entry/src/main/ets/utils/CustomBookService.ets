@@ -135,7 +135,8 @@ export class CustomBookService {
   private writeUtf8Text(path: string, content: string): void {
     const file = fileIo.openSync(path, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
-      fileIo.writeSync(file.fd, content, { encoding: 'utf-8', offset: 0 });
+      const encoded = new TextEncoder().encode(content);
+      fileIo.writeSync(file.fd, encoded);
     } finally {
       fileIo.closeSync(file.fd);
     }
