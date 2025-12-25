@@ -13,6 +13,11 @@ export const CUSTOM_BOOK_ID = 'Custom_Book';
 
 type AppendResult = 'success' | 'duplicate' | 'error';
 
+// 新增接口，用于替代原先在参数中直接写的 { setAsCurrent?: boolean }
+interface AppendOptions {
+  setAsCurrent?: boolean;
+}
+
 export class CustomBookService {
   private static instance: CustomBookService = new CustomBookService();
   private ctx: common.UIAbilityContext | null = null;
@@ -40,7 +45,8 @@ export class CustomBookService {
     return `${this.ctx.filesDir}/${fileName}`;
   }
 
-  async appendWord(word: Word, opts?: { setAsCurrent?: boolean }): Promise<AppendResult> {
+  // 修改参数类型为 AppendOptions 接口
+  async appendWord(word: Word, opts?: AppendOptions): Promise<AppendResult> {
     if (!this.ctx) {
       hilog.error(DOMAIN, TAG, 'appendWord aborted: context missing');
       return 'error';
@@ -50,12 +56,10 @@ export class CustomBookService {
       await PreferenceManager.getInstance().init(this.ctx);
       await DatabaseManager.getInstance().init(this.ctx);
 
-      // --- 修复开始：解决 ArkTS 不支持对象 Spread 操作的问题 ---
-      // 1. 先使用 serializeWord 生成一个干净的对象副本 (Deep Copy 属性)
+      // 1. 先使用 serializeWord 生成一个干净的对象副本
       const normalizedWord = this.serializeWord(word);
       // 2. 手动覆盖 bookId
       normalizedWord.bookId = CUSTOM_BOOK_ID;
-      // --- 修复结束 ---
 
       const spellingKey = (normalizedWord.spelling || '').trim().toLowerCase();
       if (!spellingKey) {
@@ -75,6 +79,7 @@ export class CustomBookService {
         return 'duplicate';
       }
 
+      // ArkTS 支持数组 spread [...list]，但不支持对象 spread
       const updatedList = [...list, normalizedWord];
       this.writeUtf8Text(path, JSON.stringify(updatedList, null, 2));
 
@@ -126,13 +131,11 @@ export class CustomBookService {
 
   private sanitizeFileName(name: string | null | undefined): string {
     if (!name || name.trim().length === 0) return DEFAULT_FILE_NAME;
-    // Remove directory separators and fall back to default when invalid characters are present
     const cleaned = name.replace(/[\\\/]/g, '').trim();
     return cleaned.length > 0 ? cleaned : DEFAULT_FILE_NAME;
   }
 
   private serializeWord(word: Word): Word {
-    // 这是一个显式的对象字面量构建，符合 ArkTS 规范
     const serialized: Word = {
       id: word.id,
       bookId: word.bookId,
@@ -169,11 +172,7 @@ export class CustomBookService {
     const file = fileIo.openSync(path, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
       const textEncoder = new util.TextEncoder();
-      // 修正：使用 encode 而不是 encodeInto。
-      // encode 返回 Uint8Array，它包含 buffer 属性。
-      // encodeInto 需要传入目标 buffer，且返回结果是对象 {read, written}，没有 buffer 属性，会导致 crash。
       const encoded = textEncoder.encode(content);
-
       fileIo.writeSync(file.fd, encoded.buffer as ArrayBuffer);
     } finally {
       fileIo.closeSync(file.fd);
