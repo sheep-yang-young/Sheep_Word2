@@ -170,10 +170,18 @@ export class FloatingCapsuleManager {
   }
 
   async confirmImport(targetBookId: string, selected: CapsuleWordCandidate[]): Promise<CapsuleImportResult> {
-    const bookId: string = (targetBookId && targetBookId.trim().length > 0) ? targetBookId.trim() : 'Captured_Words';
+    const bookId: string = targetBookId?.trim() ?? '';
+
+    const untranslated: string[] = selected
+      .filter(item => !item.hasMeaning)
+      .map(item => item.spelling);
+
+    if (!bookId) {
+      hilog.warn(DOMAIN, TAG, 'No target book specified, skip import');
+      return { added: 0, untranslated };
+    }
 
     const wordsToAdd: Word[] = [];
-    const untranslated: string[] = [];
 
     for (const item of selected) {
       const w: Word = {
@@ -189,7 +197,6 @@ export class FloatingCapsuleManager {
         nextReviewTime: 0
       };
       wordsToAdd.push(w);
-      if (!item.hasMeaning) untranslated.push(item.spelling);
     }
 
     let added: number = 0;

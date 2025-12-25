@@ -10,8 +10,8 @@ struct CapsulePage {
   @State showDialog: boolean = false;
   @State candidates: CapsuleCandidateItem[] = [];
   @State untranslated: string[] = [];
-  @State targetBook: string = 'Captured_Words';
-  @State availableBooks: string[] = ['Captured_Words'];
+  @State targetBook: string = '';
+  @State availableBooks: string[] = [];
   @State importSummary: string = '';
 
   aboutToAppear() {
@@ -27,9 +27,9 @@ struct CapsulePage {
 
   private async loadBooks() {
     const books = await DatabaseManager.getInstance().listAllBooks();
-    this.availableBooks = Array.from(new Set([...books, 'Captured_Words']));
-    if (!this.availableBooks.includes(this.targetBook)) {
-      this.targetBook = this.availableBooks[0];
+    this.availableBooks = books;
+    if (!this.targetBook || !this.availableBooks.includes(this.targetBook)) {
+      this.targetBook = this.availableBooks[0] || '';
     }
   }
 
@@ -124,7 +124,7 @@ struct CapsulePage {
         Text('导入到词书：').fontSize(13);
         TextInput({ text: this.targetBook, placeholder: '输入或选择词书' })
           .width(160)
-          .onChange((value: string) => { this.targetBook = value || 'Captured_Words'; });
+          .onChange((value: string) => { this.targetBook = value; });
       }
       .margin({ bottom: 4 })
       .alignItems(VerticalAlign.Center);
@@ -171,7 +171,12 @@ struct CapsulePage {
       this.importSummary = '请先选择要导入的单词';
       return;
     }
-    const result = await FloatingCapsuleManager.getInstance().confirmImport(this.targetBook, chosen as CapsuleWordCandidate[]);
+    const normalizedBook = this.targetBook.trim();
+    if (!normalizedBook) {
+      this.importSummary = '请先输入或选择词书名称';
+      return;
+    }
+    const result = await FloatingCapsuleManager.getInstance().confirmImport(normalizedBook, chosen as CapsuleWordCandidate[]);
     this.importSummary = `导入完成：${result.added}/${chosen.length}，未释义：${result.untranslated.join(', ') || '无'}`;
     this.showDialog = false;
   }
