@@ -4,6 +4,7 @@ import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
 import { media } from '@kit.MediaKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { CurrentWordService } from '../utils/CurrentWordService';
 
 @Component
 export struct VocabularyPage {
@@ -109,9 +110,9 @@ export struct VocabularyPage {
                   Row({ space: 6 }) {
                     Text(`${item.proficiency}%`).fontSize(10).fontColor('#999').margin({right: 4});
                     Circle({ width: 8, height: 8 }).fill(this.getProficiencyColor(item.proficiency));
-                    Button('知识卡').type(ButtonType.Capsule).height(26).padding({ left: 10, right: 10 }).fontSize(12).backgroundColor('#EEF2FF').fontColor('#374151').onClick(() => { this.selectedWord = item; this.knowledgeController.open(); })
+                      Button('知识卡').type(ButtonType.Capsule).height(26).padding({ left: 10, right: 10 }).fontSize(12).backgroundColor('#EEF2FF').fontColor('#374151').onClick(() => { this.selectedWord = item; CurrentWordService.getInstance().setCurrentWord(item); this.knowledgeController.open(); })
                   }.margin({ right: 12 });
-                  Image($r('sys.media.ohos_ic_public_edit')).width(20).height(20).fillColor('#CCC').onClick(() => { this.selectedWord = item; this.dialogController.open(); })
+                  Image($r('sys.media.ohos_ic_public_edit')).width(20).height(20).fillColor('#CCC').onClick(() => { this.selectedWord = item; CurrentWordService.getInstance().setCurrentWord(item); this.dialogController.open(); })
                 }.width('100%').padding(16).backgroundColor(Color.White).borderRadius(12).margin({ bottom: 8 })
               }.swipeAction({ end: this.DeleteButton(item.id!) })
             }, (item: Word) => item.id!.toString())

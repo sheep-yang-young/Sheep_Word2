@@ -6,6 +6,7 @@ import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
 import { vibrator } from '@kit.SensorServiceKit';
+import { CurrentWordService } from '../utils/CurrentWordService';
 
 @Component
 export struct ReviewPage {
@@ -64,6 +65,7 @@ export struct ReviewPage {
 
     if (this.words.length === 0) {
       this.isFinished = true;
+      CurrentWordService.getInstance().setCurrentWord(null);
     } else {
       this.loadCurrentWord();
     }
@@ -81,6 +83,7 @@ export struct ReviewPage {
       animateTo({ duration: 0 }, () => { this.cardAngle = 0; });
 
       const word = this.words[this.currentIndex];
+      CurrentWordService.getInstance().setCurrentWord(word);
       this.currentNote = word.note || '';
       this.userInput = '';
       this.isSpellingCorrect = null;
@@ -88,6 +91,8 @@ export struct ReviewPage {
       this.prepareScenario(word);
 
       // 移除自动发音逻辑
+    } else {
+      CurrentWordService.getInstance().setCurrentWord(null);
     }
   }
 
@@ -161,7 +166,20 @@ export struct ReviewPage {
   }
 
   async saveNote(val: string): Promise<void> { const word = this.words[this.currentIndex]; this.currentNote = val; word.note = val; if (word.id !== undefined) await DatabaseManager.getInstance().updateWordNote(word.id, val); }
-  async deleteCurrentWord(): Promise<void> { const word = this.words[this.currentIndex]; if (word && word.id !== undefined) { await DatabaseManager.getInstance().deleteWord(word.id); try { promptAction.showToast({ message: 'Deleted' }); } catch (e) {} this.words.splice(this.currentIndex, 1); if (this.currentIndex >= this.words.length) this.isFinished = true; else this.loadCurrentWord(); } }
+  async deleteCurrentWord(): Promise<void> {
+    const word = this.words[this.currentIndex];
+    if (word && word.id !== undefined) {
+      await DatabaseManager.getInstance().deleteWord(word.id);
+      try { promptAction.showToast({ message: 'Deleted' }); } catch (e) {}
+      this.words.splice(this.currentIndex, 1);
+      if (this.currentIndex >= this.words.length) {
+        this.isFinished = true;
+        CurrentWordService.getInstance().setCurrentWord(null);
+      } else {
+        this.loadCurrentWord();
+      }
+    }
+  }
   goBack(): void { this.refreshFlag++; this.pageStack.pop(); }
 
   async submitReview(grade: ReviewGrade): Promise<void> {
@@ -225,6 +243,7 @@ export struct ReviewPage {
       this.loadCurrentWord();
     } else {
       this.isFinished = true;
+      CurrentWordService.getInstance().setCurrentWord(null);
     }
   }
 

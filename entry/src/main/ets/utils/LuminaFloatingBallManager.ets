@@ -1,10 +1,12 @@
 import hilog from '@ohos.hilog';
-import { common, Want } from '@kit.AbilityKit';
+import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import floatingBall from '@ohos.window.floatingBall';
-import { CapsuleFlow } from './CapsuleFlow';
-import { ScreenshotManager } from './ScreenshotManager';
-import { ScreenshotFlow } from './ScreenshotFlow';
+import { CurrentWordService } from './CurrentWordService';
+import { DatabaseManager } from './DatabaseManager';
+import { PreferenceManager } from './PreferenceManager';
+import { promptAction } from '@kit.ArkUI';
+import { Word } from '../model/WordModel';
 
 const DOMAIN: number = 0xA0A03D;
 const TAG: string = 'LuminaBall';
@@ -63,8 +65,8 @@ export class LuminaFloatingBallManager {
       // 设置属性
       const params: floatingBall.FloatingBallParams = {
         template: floatingBall.FloatingBallTemplate.NORMAL,
-        title: 'Lumina',
-        content: '选截图识别'
+        title: '收藏单词',
+        content: '保存当前学习'
       };
 
       await this.controller.startFloatingBall(params);
@@ -106,60 +108,68 @@ export class LuminaFloatingBallManager {
       return;
     }
 
-    // 自动截图并标记导入流程
-    let latestPath: string | null = null;
-    let captured = false;
-    try {
-      const shot = await ScreenshotManager.getInstance().captureAndStore();
-      if (shot) {
-        latestPath = shot.path;
-        ScreenshotFlow.markPendingOpen(latestPath, true);
-        captured = true;
-      }
-    } catch (e) {
-      hilog.warn(DOMAIN, TAG, 'capture screenshot failed %{public}s', JSON.stringify(e));
-    }
-
-    // 标记：进入页面后自动拉起选择截图（兼容旧流程）
-    if (!captured) {
-      CapsuleFlow.markAutoPickPending();
-    }
-
-    const abilityInfo = this.ctx.abilityInfo;
-    if (!abilityInfo || !abilityInfo.bundleName || !abilityInfo.name) {
-      hilog.error(DOMAIN, TAG, 'onBallClick aborted: invalid abilityInfo=%{public}s', JSON.stringify(abilityInfo));
+    const currentWord = CurrentWordService.getInstance().getCurrentWord();
+    if (!currentWord || !currentWord.spelling) {
+      hilog.warn(DOMAIN, TAG, 'onBallClick aborted: no current word');
+      try { promptAction.showToast({ message: '暂无正在学习的单词' }); } catch (e) {}
       return;
     }
 
-    const fallbackBundleName = 'com.Sheep.Lumina';
-    const fallbackModuleName = 'entry';
-    const fallbackAbilityName = 'EntryAbility';
-
-    const bundleName = abilityInfo.bundleName.trim() || fallbackBundleName;
-    const moduleName = abilityInfo.moduleName?.trim() || fallbackModuleName;
-    const abilityName = abilityInfo.name.trim() || fallbackAbilityName;
-
-    const want: Want = {
-      deviceId: '',
-      bundleName: bundleName,
-      moduleName: moduleName,
-      abilityName: abilityName,
-      parameters: {
-        // 这个参数将在 EntryAbility 中被捕获
-        openCapsuleImport: true,
-        openScreenshotGallery: true,
-        screenshotPath: latestPath || ''
+    const normalizedWord = await this.buildPersistableWord(currentWord);
+    try {
+      const insertedId = await DatabaseManager.getInstance().addWord(normalizedWord);
+      if (insertedId > 0) {
+        hilog.info(DOMAIN, TAG, 'Word added via floating ball: %{public}s', normalizedWord.spelling);
+        try { promptAction.showToast({ message: `已添加：${normalizedWord.spelling}` }); } catch (e) {}
+      } else {
+        hilog.info(DOMAIN, TAG, 'Word already exists or failed to insert: %{public}s', normalizedWord.spelling);
+        try { promptAction.showToast({ message: '单词已存在或添加失败' }); } catch (e) {}
       }
+    } catch (err) {
+      hilog.error(DOMAIN, TAG, 'onBallClick insert failed %{public}s', JSON.stringify(err));
+      try { promptAction.showToast({ message: '保存单词时出错' }); } catch (e) {}
+    }
+  }
+
+  private async buildPersistableWord(word: Word): Promise<Word> {
+    let bookId = word.bookId;
+    if (!bookId || bookId.trim().length === 0) {
+      try {
+        bookId = await PreferenceManager.getInstance().getCurrentBook();
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'Fallback book id fetch failed %{public}s', JSON.stringify(e));
+      }
+    }
+
+    const normalized: Word = {
+      ...word,
+      bookId: bookId || 'Default Library',
+      spelling: word.spelling || '',
+      meaning: word.meaning || '',
+      phonetic: word.phonetic || '',
+      example: word.example || '',
+      note: word.note || '',
+      roots: word.roots || [],
+      affixes: word.affixes || [],
+      collocations: word.collocations || [],
+      synonyms: word.synonyms || [],
+      antonyms: word.antonyms || [],
+      derivatives: word.derivatives || [],
+      senses: word.senses || [],
+      knowledgeScore: word.knowledgeScore ?? 0,
+      proficiency: word.proficiency ?? 0,
+      repetition: word.repetition ?? 0,
+      interval: word.interval ?? 0,
+      easeFactor: word.easeFactor ?? 2.5,
+      lastReviewTime: word.lastReviewTime ?? 0,
+      nextReviewTime: word.nextReviewTime ?? 0,
+      proficiencySpelling: word.proficiencySpelling ?? 0,
+      repetitionSpelling: word.repetitionSpelling ?? 0,
+      intervalSpelling: word.intervalSpelling ?? 0,
+      easeFactorSpelling: word.easeFactorSpelling ?? 2.5,
+      lastReviewTimeSpelling: word.lastReviewTimeSpelling ?? 0,
+      nextReviewTimeSpelling: word.nextReviewTimeSpelling ?? 0
     };
-
-    hilog.info(DOMAIN, TAG, 'ball click -> startAbility with want=%{public}s', JSON.stringify(want));
-
-    // [修复] 移除 missionManager 逻辑，直接使用 startAbility。
-    // 如果 Ability 配置为 singleton（默认推荐），系统会自动将其切换到前台。
-    this.ctx.startAbility(want).then(() => {
-      hilog.info(DOMAIN, TAG, 'startAbility success');
-    }).catch((err: BusinessError) => {
-      hilog.error(DOMAIN, TAG, 'startAbility failed code=%{public}d detail=%{public}s', err.code, JSON.stringify(err));
-    });
+    return normalized;
   }
 }
