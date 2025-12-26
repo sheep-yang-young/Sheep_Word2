@@ -125,7 +125,7 @@ struct Index {
   @Builder
   SettingsSheetBuilder() {
     Column() {
-      SettingsPage({ dailyLimit: $dailyLimit })
+      SettingsPage({ dailyLimit: $dailyLimit, isShowSettingsSheet: $isShowSettingsSheet })
     }
     .width('100%')
     .height('100%')
