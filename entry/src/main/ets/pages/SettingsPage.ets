@@ -1,6 +1,10 @@
-import { router, NavPathStack } from '@kit.ArkUI';
+import { router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
+// 注意：NavPathStack 并不在 @kit.ArkUI 中，直接删除该处的导入
+// 在 ArkUI 中，NavPathStack 通常是全局注入或通过具体路径导入
+// 如果你的环境依然提示找不到，可以尝试：import { NavPathStack } from '@ohos.arkui.declarative.interfaces';
+
 import { PreferenceManager } from '../utils/PreferenceManager';
 import { LuminaFloatingBallManager } from '../utils/LuminaFloatingBallManager';
 
