@@ -30,7 +30,7 @@ const LOCAL_BOOKS: CloudBook[] = [
   { id: 'local_cet6', name: 'CET-6', category: 'English', size: '内置', desc: '大学英语六级进阶词汇', version: 1 },
   { id: 'local_gre', name: 'GRE8000', category: 'English', size: '内置', desc: 'GRE 核心 8000 词', version: 1 },
   { id: 'local_toefl', name: 'TOEFL', category: 'English', size: '内置', desc: '托福高频词汇', version: 1 },
-  { id: 'linux_cmd', name: 'Linux_cmd', category: 'Code', size: '内置', desc: '常用Linux指令', version: 1 }
+  { id: 'linux_cmd', name: 'linux_cmd', category: 'Code', size: '内置', desc: '常用Linux指令', version: 1 }
 ];
 
 @Entry
@@ -220,18 +220,27 @@ struct HomePage {
 
   async aboutToAppear(): Promise<void> {
     this.refreshStats();
-    this.bookList = [...LOCAL_BOOKS];
+    this.bookList = [...LOCAL_BOOKS.map(book => ({ ...book, name: this.normalizeBookName(book.name) }))];
     await this.checkDownloadedStatus();
+  }
+
+  private normalizeBookName(name: string): string {
+    if (!name) return name;
+    if (name.toLowerCase() === 'linux_cmd') {
+      return 'linux_cmd';
+    }
+    return name;
   }
 
   async checkDownloadedStatus() {
     const db = DatabaseManager.getInstance();
-    const existingBooks = new Set(await db.listAllBooks());
+    const existingBooks = new Set((await db.listAllBooks()).map(name => this.normalizeBookName(name)));
     const newDownloadedList: string[] = [];
 
     for (const book of this.bookList) {
-      if (book.size === '内置' || existingBooks.has(book.name)) {
-        newDownloadedList.push(book.name);
+      const normalizedName = this.normalizeBookName(book.name);
+      if (book.size === '内置' || existingBooks.has(normalizedName)) {
+        newDownloadedList.push(normalizedName);
       }
     }
     this.downloadedBooks = Array.from(new Set(newDownloadedList));
@@ -241,16 +250,17 @@ struct HomePage {
     this.isSheetLoading = true;
     const db = DatabaseManager.getInstance();
     const pref = PreferenceManager.getInstance();
-    const mergedList: CloudBook[] = [...LOCAL_BOOKS];
-    const seenNames = new Set<string>(LOCAL_BOOKS.map(book => book.name));
+    const mergedList: CloudBook[] = [...LOCAL_BOOKS.map(book => ({ ...book, name: this.normalizeBookName(book.name) }))];
+    const seenNames = new Set<string>(mergedList.map(book => book.name));
 
     try {
       const cloud = await CloudBookManager.getManifest();
       if (cloud && cloud.length > 0) {
         cloud.forEach(book => {
-          if (!seenNames.has(book.name)) {
-            mergedList.push(book);
-            seenNames.add(book.name);
+          const normalizedName = this.normalizeBookName(book.name);
+          if (!seenNames.has(normalizedName)) {
+            mergedList.push({ ...book, name: normalizedName });
+            seenNames.add(normalizedName);
           }
         });
       }
@@ -258,18 +268,19 @@ struct HomePage {
       const localBooks = await db.listAllBooks();
       for (const name of localBooks) {
         if (!name || name === 'Default Library') continue;
-        if (seenNames.has(name)) continue;
+        const normalizedName = this.normalizeBookName(name);
+        if (seenNames.has(normalizedName)) continue;
 
-        const category = await pref.getBookCategory(name) ?? 'User';
+        const category = await pref.getBookCategory(normalizedName) ?? 'User';
         mergedList.push({
-          id: name,
-          name,
+          id: normalizedName,
+          name: normalizedName,
           category,
           size: '本地',
           desc: '用户自定义词书',
           version: 1
         });
-        seenNames.add(name);
+        seenNames.add(normalizedName);
       }
     } catch (e) {
       console.error('Fetch cloud books error:', e);
@@ -290,18 +301,24 @@ struct HomePage {
     const pref = PreferenceManager.getInstance();
 
     this.reviewMode = await pref.getReviewMode();
-    this.selectedBook = await pref.getCurrentBook();
+    const currentBook = await pref.getCurrentBook();
+    const normalizedCurrentBook = this.normalizeBookName(currentBook);
+    if (currentBook !== normalizedCurrentBook) {
+      await pref.setCurrentBook(normalizedCurrentBook);
+    }
+    this.selectedBook = normalizedCurrentBook;
 
     const isValid = this.selectedBook && this.selectedBook !== "Default Library" && this.selectedBook !== "请选择词书";
     if (!isValid) {
       const valid = await db.findAnyValidBook();
       if (valid && await db.checkBookExists(valid)) {
-        this.selectedBook = valid;
-        const inferredCategory = this.getBookCategoryFromRegistry(valid);
+        const normalizedValid = this.normalizeBookName(valid);
+        this.selectedBook = normalizedValid;
+        const inferredCategory = this.getBookCategoryFromRegistry(normalizedValid);
         if (inferredCategory) {
-          await pref.registerBookCategory(valid, inferredCategory);
+          await pref.registerBookCategory(normalizedValid, inferredCategory);
         }
-        await pref.setCurrentBook(valid);
+        await pref.setCurrentBook(normalizedValid);
       } else {
         this.selectedBook = "Default Library";
       }
@@ -339,7 +356,9 @@ struct HomePage {
   }
 
   async handleBookClick(book: CloudBook) {
-    if (this.selectedBook === book.name) return;
+    const normalizedSelected = this.normalizeBookName(this.selectedBook);
+    const normalizedBookName = this.normalizeBookName(book.name);
+    if (normalizedSelected === normalizedBookName) return;
 
     const db = DatabaseManager.getInstance();
     const isLocalBook = book.size === '本地' || book.category === 'User';
@@ -358,12 +377,12 @@ struct HomePage {
     const exists = await db.checkBookExists(book.name);
 
     if (exists) {
-      await this.switchBookLogic(book);
+      await this.switchBookLogic({ ...book, name: normalizedBookName });
     } else {
       if (book.size === '内置') {
-        await this.importLocalBook(context, book);
+        await this.importLocalBook(context, { ...book, name: normalizedBookName });
       } else {
-        await this.downloadAndImportBook(book, context);
+        await this.downloadAndImportBook({ ...book, name: normalizedBookName }, context);
       }
     }
   }
@@ -376,7 +395,7 @@ struct HomePage {
     else if (book.name === 'CET-6') fileName = 'CET6.json';
     else if (book.name === 'GRE8000') fileName = 'GRE8000.json';
     else if (book.name === 'TOEFL') fileName = 'TOEFL.json';
-    else if (book.name === 'linux_cmd')fileName = 'linux_cmd.json';
+    else if (book.name === 'linux_cmd') fileName = 'linux_cmd.json';
 
     if (fileName) {
       const count = await WordImporter.importFromRawFile(context, fileName, book.name);
@@ -413,7 +432,8 @@ struct HomePage {
   }
 
   async switchBookLogic(book: CloudBook | string) {
-    const bookName = typeof book === 'string' ? book : book.name;
+    const rawBookName = typeof book === 'string' ? book : book.name;
+    const bookName = this.normalizeBookName(rawBookName);
     const categoryFromBook = typeof book === 'string' ? undefined : book.category;
     const pref = PreferenceManager.getInstance();
 
@@ -455,6 +475,7 @@ struct HomePage {
   }
 
   @Builder BookSheetBuilder() {
+    const normalizedSelected = this.normalizeBookName(this.selectedBook);
     Column() {
       Row() {
         if (this.isSheetLoading) {
@@ -468,27 +489,28 @@ struct HomePage {
 
       List({ space: 12 }) {
         ForEach(this.bookList, (book: CloudBook) => {
+          const normalizedName = this.normalizeBookName(book.name);
           ListItem() {
               Row() {
                 Column() {
                   if (book.size === '内置') {
-                    SymbolGlyph($r('sys.symbol.bookmark')).fontSize(24).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#FA8C16'])
+                    SymbolGlyph($r('sys.symbol.bookmark')).fontSize(24).fontColor(normalizedSelected === normalizedName ? ['#0A59F7'] : ['#FA8C16'])
                   } else if (book.category === 'English') {
-                    SymbolGlyph($r('sys.symbol.a_square_fill')).fontSize(28).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
+                    SymbolGlyph($r('sys.symbol.a_square_fill')).fontSize(28).fontColor(normalizedSelected === normalizedName ? ['#0A59F7'] : ['#888'])
                   } else if (book.category === 'User' || book.size === '本地') {
-                    SymbolGlyph($r('sys.symbol.bookmark_filled_on_bookmark')).fontSize(24).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
+                    SymbolGlyph($r('sys.symbol.bookmark_filled_on_bookmark')).fontSize(24).fontColor(normalizedSelected === normalizedName ? ['#0A59F7'] : ['#888'])
                   } else {
-                    Text('</>').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.selectedBook === book.name ? '#0A59F7' : '#888')
+                    Text('</>').fontSize(18).fontWeight(FontWeight.Bold).fontColor(normalizedSelected === normalizedName ? '#0A59F7' : '#888')
                   }
                 }
-                .width(48).height(48).backgroundColor(this.selectedBook === book.name ? '#E6F7FF' : '#F5F5F5')
+                .width(48).height(48).backgroundColor(normalizedSelected === normalizedName ? '#E6F7FF' : '#F5F5F5')
                 .borderRadius(12).justifyContent(FlexAlign.Center).margin({ right: 16 })
 
                 Column({ space: 4 }) {
                   Row({ space: 6 }) {
                     Text(book.name).fontSize(16).fontWeight(FontWeight.Medium).fontColor('#333')
 
-                    if (this.selectedBook === book.name) {
+                    if (normalizedSelected === normalizedName) {
                       Text('当前使用').fontSize(10).fontColor('#0A59F7').backgroundColor('#E6F7FF').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
                     } else if (book.size === '内置') {
                       Text('内置').fontSize(10).fontColor('#FA8C16').backgroundColor('#FFF7E6').padding({ left:6, right:6, top:2, bottom:2 }).borderRadius(8)
@@ -504,13 +526,13 @@ struct HomePage {
               if (this.downloadingBookId === book.id) {
                 LoadingProgress().width(24).height(24).color('#0A59F7')
               } else {
-                Button(this.selectedBook === book.name ? '使用中' : (this.downloadedBooks.includes(book.name) ? '切换' : '下载'))
+                Button(normalizedSelected === normalizedName ? '使用中' : (this.downloadedBooks.includes(normalizedName) ? '切换' : '下载'))
                   .fontSize(12)
                   .height(28)
-                  .backgroundColor(this.selectedBook === book.name ? 'rgba(0,0,0,0.05)' : '#0A59F7')
-                  .fontColor(this.selectedBook === book.name ? '#999' : '#FFF')
+                  .backgroundColor(normalizedSelected === normalizedName ? 'rgba(0,0,0,0.05)' : '#0A59F7')
+                  .fontColor(normalizedSelected === normalizedName ? '#999' : '#FFF')
                   .onClick(() => this.handleBookClick(book))
-                  .enabled(this.selectedBook !== book.name)
+                  .enabled(normalizedSelected !== normalizedName)
               }
             }
             .width('100%').padding(16).backgroundColor('#FFF').borderRadius(16)
