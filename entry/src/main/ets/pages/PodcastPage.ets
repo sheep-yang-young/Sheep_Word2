@@ -98,7 +98,6 @@ export struct PodcastPage {
     try {
       const audioPicker = new picker.AudioViewPicker(this.context);
       const selectOptions = new picker.AudioSelectOptions();
-      selectOptions.MIMEType = ['audio/*'];
       const result = await audioPicker.select(selectOptions);
 
       if (result.length > 0) {
