@@ -37,6 +37,7 @@ export struct PodcastPage {
   private session: avSession.AVSession | null = null;
   private context = getContext(this) as common.UIAbilityContext;
   private currentFileHandle: fs.File | null = null;
+  private readonly supportedAudioExtensions: string[] = ['.mp3', '.wav', '.flac', '.aac', '.m4a', '.ogg'];
 
   // --- 生命周期 ---
   async aboutToAppear() {
@@ -63,18 +64,24 @@ export struct PodcastPage {
     }
   }
 
-  // --- 核心逻辑：加载列表 (不做后缀过滤) ---
+  // --- 核心逻辑：加载列表（仅音频文件） ---
   loadAudioList() {
     try {
       const filesDir = this.context.filesDir;
       const fileNames = fs.listFileSync(filesDir);
 
-      // 修改点：不过滤后缀，只过滤掉以点开头的隐藏文件(可选)
       const visibleFiles = fileNames.filter(name => !name.startsWith('.'));
+      const audioFiles = visibleFiles.filter(name => this.isSupportedAudioPath(name));
 
-      this.audioList = visibleFiles.map(name => {
+      this.audioList = audioFiles.map(name => {
         return new LocalAudio(name, `${filesDir}/${name}`);
       });
+
+      if (this.currentAudio && !this.audioList.some(item => item.filePath === this.currentAudio?.filePath)) {
+        this.currentAudio = null;
+        this.isPlaying = false;
+        this.avPlayer?.reset();
+      }
 
       // 如果当前没有播放，且列表有数据，预选中第一个
       if (this.audioList.length > 0 && !this.currentAudio) {
@@ -90,14 +97,22 @@ export struct PodcastPage {
   async importAudio() {
     try {
       const audioPicker = new picker.AudioViewPicker(this.context);
-      // SelectOptions 不设置 MIME 类型，允许选择所有文件
-      const result = await audioPicker.select(new picker.AudioSelectOptions());
+      const selectOptions = new picker.AudioSelectOptions();
+      selectOptions.MIMEType = ['audio/*'];
+      const result = await audioPicker.select(selectOptions);
 
       if (result.length > 0) {
         let successCount = 0;
         let duplicateCount = 0;
+        let unsupportedCount = 0;
 
         result.forEach(uri => {
+          if (!this.isSupportedAudioPath(uri)) {
+            unsupportedCount++;
+            console.warn(`[Podcast] Unsupported audio skipped: ${uri}`);
+            return;
+          }
+
           // 1. 获取真实文件名
           // 这里的 decodeURIComponent 是为了把 %20 等符号转回空格
           let fileName = decodeURIComponent(uri.split('/').pop() || '');
@@ -124,9 +139,18 @@ export struct PodcastPage {
         this.loadAudioList();
 
         // 4. 提示
-        let msg = `导入成功 ${successCount} 个`;
-        if (duplicateCount > 0) msg += `，跳过重复 ${duplicateCount} 个`;
-        promptAction.showToast({ message: msg });
+        const messages: string[] = [];
+        if (successCount > 0) messages.push(`导入成功 ${successCount} 个`);
+        if (duplicateCount > 0) messages.push(`跳过重复 ${duplicateCount} 个`);
+        if (unsupportedCount > 0) messages.push(`不支持的音频 ${unsupportedCount} 个`);
+
+        promptAction.showToast({ message: messages.join('，') || '未导入有效音频' });
+
+        if (successCount === 0 && this.audioList.length === 0) {
+          this.currentAudio = null;
+          this.isPlaying = false;
+          await this.avPlayer?.reset();
+        }
       }
     } catch (e) {
       console.error(`[Podcast] Import error: ${e}`);
@@ -267,6 +291,10 @@ export struct PodcastPage {
 
   async togglePlay() {
     if (!this.avPlayer) return;
+    if (!this.currentAudio) {
+      promptAction.showToast({ message: '请先导入有效音频' });
+      return;
+    }
     if (this.isPlaying) {
       await this.avPlayer.pause();
     } else {
@@ -306,6 +334,11 @@ export struct PodcastPage {
       this.avPlayer.seek(targetTime);
       this.currentTime = targetTime;
     }
+  }
+
+  private isSupportedAudioPath(path: string): boolean {
+    const lowerPath = path.toLowerCase();
+    return this.supportedAudioExtensions.some(ext => lowerPath.endsWith(ext));
   }
 
   formatTime(ms: number): string {
