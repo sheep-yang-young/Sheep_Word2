@@ -604,7 +604,7 @@ struct HomePage {
 
           Row({ space: 12 }) {
             this.QuickActionCard('开始喂草', '背单词', '#0A59F7', $r('sys.symbol.play_circle'), () => { this.pageStack.pushPath({ name: 'ReviewPage' }) })
-            this.QuickActionCard('每日新闻', 'China Daily', '#FA8C16', $r('sys.symbol.doc_text'), () => { this.pageStack.pushPath({ name: 'DailyNewsPage' }) })
+            this.QuickActionCard('经典晨读', 'English', '#FA8C16', $r('sys.symbol.doc_text'), () => { this.pageStack.pushPath({ name: 'DailyNewsPage' }) })
           }.padding({ left: 20, right: 20 })
 
           Column() {

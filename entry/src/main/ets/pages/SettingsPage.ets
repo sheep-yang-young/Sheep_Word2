@@ -1,3 +1,4 @@
+import { router, NavPathStack } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { PreferenceManager } from '../utils/PreferenceManager';
