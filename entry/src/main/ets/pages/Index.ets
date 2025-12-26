@@ -158,9 +158,9 @@ struct Index {
     .width('100%')
     .height('100%')
     .bindSheet($$this.isShowSettingsSheet, this.SettingsSheetBuilder(), {
-      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      detents: [SheetSize.LARGE],
       backgroundColor: '#F5F7FA',
-      dragBar: false,
+      dragBar: true,
       blurStyle: BlurStyle.Thick
     })
   }
