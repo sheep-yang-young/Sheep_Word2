@@ -29,7 +29,8 @@ const LOCAL_BOOKS: CloudBook[] = [
   { id: 'local_cet4', name: 'CET-4', category: 'English', size: '内置', desc: '大学英语四级核心词汇', version: 1 },
   { id: 'local_cet6', name: 'CET-6', category: 'English', size: '内置', desc: '大学英语六级进阶词汇', version: 1 },
   { id: 'local_gre', name: 'GRE8000', category: 'English', size: '内置', desc: 'GRE 核心 8000 词', version: 1 },
-  { id: 'local_toefl', name: 'TOEFL', category: 'English', size: '内置', desc: '托福高频词汇', version: 1 }
+  { id: 'local_toefl', name: 'TOEFL', category: 'English', size: '内置', desc: '托福高频词汇', version: 1 },
+  { id: 'linux_cmd', name: 'Linux_cmd', category: 'Code', size: '内置', desc: '常用Linux指令', version: 1 }
 ];
 
 @Entry
@@ -375,6 +376,7 @@ struct HomePage {
     else if (book.name === 'CET-6') fileName = 'CET6.json';
     else if (book.name === 'GRE8000') fileName = 'GRE8000.json';
     else if (book.name === 'TOEFL') fileName = 'TOEFL.json';
+    else if (book.name === 'linux_cmd')fileName = 'linux_cmd.json';
 
     if (fileName) {
       const count = await WordImporter.importFromRawFile(context, fileName, book.name);
@@ -474,7 +476,7 @@ struct HomePage {
                   } else if (book.category === 'English') {
                     SymbolGlyph($r('sys.symbol.a_square_fill')).fontSize(28).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
                   } else if (book.category === 'User' || book.size === '本地') {
-                    SymbolGlyph($r('sys.symbol.tram_fill')).fontSize(24).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
+                    SymbolGlyph($r('sys.symbol.bookmark_filled_on_bookmark')).fontSize(24).fontColor(this.selectedBook === book.name ? ['#0A59F7'] : ['#888'])
                   } else {
                     Text('</>').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.selectedBook === book.name ? '#0A59F7' : '#888')
                   }
